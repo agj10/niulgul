@@ -15,7 +15,21 @@ function draw() {
   requestAnimationFrame(draw);
 }
 draw();
-Object.defineProperty(navigator.mediaDevices, 'getUserMedia', { configurable: true, value: async () => frame.captureStream(12) });
+const rear = document.createElement('canvas'); rear.width = 400; rear.height = 400;
+const rearContext = rear.getContext('2d'); rearContext.drawImage(image, 0, 0, 400, 400);
+rearContext.fillStyle = '#d9e7f0'; rearContext.fillRect(0, 330, 400, 70);
+rearContext.fillStyle = '#243346'; rearContext.font = 'bold 40px sans-serif'; rearContext.fillText('REAR', 20, 380);
+const cameraRequests = []; let stoppedTracks = 0;
+Object.defineProperty(navigator.mediaDevices, 'getUserMedia', { configurable: true, value: async constraints => {
+  const requested = constraints.video.facingMode;
+  const facing = typeof requested === 'string' ? requested : requested.exact ?? requested.ideal ?? 'user';
+  cameraRequests.push(facing);
+  const media = (facing === 'environment' ? rear : frame).captureStream(12), track = media.getVideoTracks()[0];
+  const settings = track.getSettings.bind(track), stop = track.stop.bind(track);
+  track.getSettings = () => ({ ...settings(), facingMode: facing });
+  track.stop = () => { stoppedTracks++; stop(); };
+  return media;
+} });
 function fingerprint(data) {
   let hash = 2166136261;
   for (const byte of data) hash = Math.imul(hash ^ byte, 16777619);
@@ -33,7 +47,7 @@ window.Worker = class extends NativeWorker {
 };
 await import('/src/main.tsx');
 const report = document.createElement('pre'); report.id = 'camera-test-report';
-report.style.cssText = 'position:fixed;bottom:4px;right:4px;padding:8px;background:#fff9;font:10px monospace;z-index:10';
+report.style.cssText = 'position:fixed;bottom:4px;right:4px;max-width:calc(100vw - 16px);white-space:pre-wrap;padding:8px;background:#fff9;font:10px monospace;z-index:10';
 document.body.append(report);
 let animations = 0, completed = 0, snapshots = 0, last = '', lastSnapshot = '';
 function updateReport() {
@@ -45,7 +59,7 @@ function updateReport() {
   }
   const snapshot = document.querySelector('.camera-snapshot img')?.src ?? '';
   if (snapshot && snapshot !== lastSnapshot) { snapshots++; lastSnapshot = snapshot; }
-  report.textContent = JSON.stringify({ videoFrames, snapshots, solves, targets, animations, completed, status });
+  report.textContent = JSON.stringify({ videoFrames, snapshots, solves, targets, animations, completed, cameraRequests, stoppedTracks, status });
 }
 new MutationObserver(updateReport).observe(document.getElementById('root'), { subtree:true, childList:true, characterData:true });
 setInterval(updateReport, 250);

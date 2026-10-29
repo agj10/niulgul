@@ -15,6 +15,9 @@ main{max-width:1376px;margin:auto;padding:42px 48px 24px}.intro{margin-bottom:42
 .capture-button{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;padding:10px 12px;margin-top:8px;border:1px solid #b5c2a4;border-radius:4px;background:#edf2e4;font-size:11px;color:#50633d}.capture-button:hover:not(:disabled){background:#e2ead5;border-color:#8da173}.camera-hint{font-size:9px;color:#8a957d;text-align:center;line-height:1.7;margin:8px 0 0}.camera-snapshot{display:flex;align-items:center;gap:10px;margin-top:10px;padding:9px;background:#fff8;border:1px solid var(--line);border-radius:5px}.camera-snapshot img{width:43px;height:43px;object-fit:cover;border-radius:3px}.camera-snapshot span{flex:1;min-width:0}.camera-snapshot strong{display:block;font-size:10px;font-weight:500}.camera-snapshot small{display:block;font-size:9px;color:#8a957d;margin-top:5px}.camera-snapshot>svg{color:#768d5a}
 footer{margin-top:42px;padding-top:19px;border-top:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;font-size:9px;color:#9ca58e}footer>span:last-child,footer a{display:flex;align-items:center;gap:4px}footer a:hover{color:#5a7142}
 .inputs,.input-section{min-width:0}
+.camera-preview:not(.is-mirrored) video{transform:none}
+.camera-switch{position:absolute;top:8px;right:8px;display:flex;align-items:center;justify-content:center;gap:6px;min-width:44px;min-height:44px;padding:8px 10px;border:1px solid #c4ceb7;border-radius:4px;background:#f8faf0ee;color:#50633d;font-size:11px;white-space:nowrap}
+.camera-switch:hover:not(:disabled){background:#fff}
 .intro>span,.scope-hint,.input-error,.result-status{overflow-wrap:anywhere;word-break:keep-all}
 .upload-copy strong{max-width:none}
 .camera-snapshot img{flex-shrink:0}

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { ArrowDown, ArrowUpRight, Camera, Check, ChevronRight, Github, ImagePlus, ScanFace, Upload, X } from 'lucide-react';
-import { loadAsset, assetUrl, makePatches, capture, fromCanvas, canvas, materialBase } from './images';
+import { ArrowDown, ArrowUpRight, Camera, Check, ChevronRight, Github, ImagePlus, ScanFace, SwitchCamera, Upload, X } from 'lucide-react';
+import { loadAsset, assetUrl, makePatches, fromCanvas, canvas, materialBase } from './images';
+import { capture, replaceCamera, stopCamera, type CameraFacing } from './camera';
 import { loadOriginalCore, ORIGINAL_SETTINGS } from './original-core';
 import { Matcher } from './matcher';
 import { LatestJobs } from './jobs';
@@ -40,6 +41,7 @@ export function App() {
   const [phase, setPhase] = useState<Phase>('loading'), [message, setMessage] = useState('샘플 사진을 준비하고 있어요.');
   const [busy, setBusy] = useState(false), [progress, setProgress] = useState(0), [result, setResult] = useState<Result>();
   const [cameraReady, setCameraReady] = useState(false), [cameraCapturing, setCameraCapturing] = useState(false);
+  const [cameraFacing, setCameraFacing] = useState<CameraFacing>('user');
   const [cameraPending, setCameraPending] = useState(false), [cameraError, setCameraError] = useState('');
   const [sourceLoading, setSourceLoading] = useState(false), [targetLoading, setTargetLoading] = useState(false);
   const [exportProgress, setExportProgress] = useState<number | null>(null), [showOriginal, setShowOriginal] = useState(false);
@@ -49,6 +51,7 @@ export function App() {
   const selectedTarget = mode === 'camera' ? cameraTarget : target;
   const input = useRef({ source, target: selectedTarget, settings, scope, mode });
   const active = useRef(false), mounted = useRef(true), epoch = useRef(0), captureRevision = useRef(0);
+  const cameraRevision = useRef(0);
   const animation = useRef<{ cancel(): void } | undefined>(undefined), exporter = useRef<Worker | undefined>(undefined);
   const uploadRevision = useRef({ source: 0, target: 0 }), imageRevision = useRef(''), needsAnimation = useRef(false);
   input.current = { source, target: selectedTarget, settings, scope, mode };
@@ -131,8 +134,8 @@ export function App() {
       .then(([material, face]) => { if (!mounted.current) return; face.builtinTarget = true; setSource(material); setTarget(face); setPhase('ready'); setMessage('사진을 골랐다면, 변환하기를 눌러 보세요.'); })
       .catch(value => mounted.current && fail(value));
     return () => {
-      mounted.current = false; captureRevision.current++; animation.current?.cancel();
-      queue.current?.dispose(); matcher.current?.dispose(); exporter.current?.terminate(); stream.current?.getTracks().forEach(track => track.stop());
+      mounted.current = false; captureRevision.current++; cameraRevision.current++; animation.current?.cancel();
+      queue.current?.dispose(); matcher.current?.dispose(); exporter.current?.terminate(); stopCamera(stream.current);
     };
   }, []);
   useEffect(() => {
@@ -160,36 +163,40 @@ export function App() {
     } catch (value) { if (revision === uploadRevision.current[kind]) fail(value); }
     finally { if (revision === uploadRevision.current[kind]) loading(false); }
   }
-  async function openCamera() {
-    const openedEpoch = epoch.current;
-    setCameraPending(true); setCameraError('');
+  async function openCamera(facing: CameraFacing = cameraFacing) {
+    if (cameraPending || cameraCapturing || input.current.mode !== 'camera') return;
+    const openedEpoch = epoch.current, revision = ++cameraRevision.current;
+    const previous = stream.current ? { stream: stream.current, facing: cameraFacing } : undefined;
+    const isCurrent = () => mounted.current && openedEpoch === epoch.current && revision === cameraRevision.current && input.current.mode === 'camera';
+    stream.current = undefined;
+    if (video.current) video.current.srcObject = null;
+    setCameraReady(false); setCameraPending(true); setCameraError('');
     try {
       if (!navigator.mediaDevices?.getUserMedia) throw new Error('카메라는 HTTPS 또는 localhost에서 사용할 수 있어요.');
-      stream.current?.getTracks().forEach(track => track.stop());
-      const media = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
-      if (!mounted.current || openedEpoch !== epoch.current || input.current.mode !== 'camera') { media.getTracks().forEach(track => track.stop()); return; }
+      const camera = await replaceCamera(navigator.mediaDevices, facing, previous, isCurrent), media = camera.stream;
+      if (!isCurrent()) { stopCamera(media); return; }
       stream.current = media;
       const element = video.current!; element.srcObject = media; await element.play();
-      if (!mounted.current || openedEpoch !== epoch.current) { media.getTracks().forEach(track => track.stop()); return; }
-      setCameraReady(true);
-      media.getVideoTracks()[0].onended = () => { if (stream.current === media) setCameraReady(false); };
+      if (!isCurrent()) { stopCamera(media); return; }
+      setCameraFacing(camera.facing); setCameraReady(true); setCameraError(camera.warning ?? '');
+      media.getVideoTracks()[0].onended = () => { if (stream.current === media) { stream.current = undefined; setCameraReady(false); } };
     } catch (value) {
-      if (!mounted.current || openedEpoch !== epoch.current) return;
-      stream.current?.getTracks().forEach(track => track.stop()); stream.current = undefined;
+      if (!isCurrent()) return;
+      stopCamera(stream.current); stopCamera(previous?.stream); stream.current = undefined;
       setCameraReady(false);
       const name = value instanceof Error ? value.name : '';
       setCameraError(name === 'NotAllowedError' ? '카메라 사용을 허용해 주세요. 사진 모드도 사용할 수 있어요.'
         : name === 'NotFoundError' ? '연결된 카메라를 찾지 못했어요.'
         : name === 'NotReadableError' ? '다른 앱이 카메라를 사용 중인지 확인해 주세요.'
         : value instanceof Error ? value.message : '카메라를 열지 못했어요.');
-    } finally { if (mounted.current && openedEpoch === epoch.current) setCameraPending(false); }
+    } finally { if (isCurrent()) setCameraPending(false); }
   }
   async function takeSnapshot() {
     if (!cameraReady || !video.current || !stream.current?.active || cameraCapturing) return;
     const revision = ++captureRevision.current, capturedEpoch = epoch.current;
     setCameraCapturing(true); setCameraError('');
     try {
-      const image = capture(video.current);
+      const image = capture(video.current, cameraFacing);
       const asset = await fromCanvas(image, '촬영한 얼굴', 'camera-' + crypto.randomUUID());
       if (!mounted.current || revision !== captureRevision.current || capturedEpoch !== epoch.current) return;
       setCameraTarget(asset);
@@ -203,9 +210,9 @@ export function App() {
   }
   function changeMode(value: Mode) {
     if (value === mode) return;
-    active.current = false; epoch.current++; captureRevision.current++; needsAnimation.current = false;
+    active.current = false; epoch.current++; captureRevision.current++; cameraRevision.current++; needsAnimation.current = false;
     queue.current?.invalidate(); animation.current?.cancel(); setMode(value); setCameraPending(false); setCameraCapturing(false);
-    if (value === 'photo') { stream.current?.getTracks().forEach(track => track.stop()); stream.current = undefined; setCameraReady(false); }
+    if (value === 'photo') { stopCamera(stream.current); stream.current = undefined; setCameraReady(false); }
     setCameraError('');
     setPhase(resultRef.current ? 'done' : 'ready');
     setMessage(value === 'camera' ? (cameraTarget ? '촬영한 얼굴로 변환하거나 다시 촬영해 주세요.' : '카메라를 켜고 현재 화면을 촬영해 주세요.') : '사진을 골랐다면, 변환하기를 눌러 주세요.');
@@ -256,10 +263,14 @@ export function App() {
           <div className="tabs" role="group" aria-label="얼굴 입력 방식"><button aria-pressed={mode === 'photo'} className={mode === 'photo' ? 'active' : ''} onClick={() => changeMode('photo')}><ImagePlus size={14} />사진</button>
             <button aria-pressed={mode === 'camera'} className={mode === 'camera' ? 'active' : ''} onClick={() => changeMode('camera')}><Camera size={14} />카메라</button></div>
           {mode === 'photo' ? <UploadBox kind="target" asset={target} loading={targetLoading} onFile={file => void choose(file, 'target')} /> : <div className="camera-input">
-            <div className={'camera-preview ' + (cameraReady ? 'is-ready' : '')}>
+            <div className={'camera-preview ' + (cameraReady ? 'is-ready ' : '') + (cameraFacing === 'user' ? 'is-mirrored' : '')}>
               <video ref={video} muted playsInline aria-label="목표 얼굴 카메라 미리보기" />
-              {!cameraReady && <div className="camera-prompt"><Camera size={25} strokeWidth={1.2} /><p>지금의 표정을 얼굴로</p><button className="secondary-button" disabled={cameraPending} onClick={openCamera}>{cameraPending ? '카메라 연결 중…' : '카메라 켜기'}</button></div>}
-              {cameraReady && <span className="camera-badge"><span />촬영 미리보기</span>}
+              {!cameraReady && <div className="camera-prompt"><Camera size={25} strokeWidth={1.2} /><p>지금의 표정을 얼굴로</p><button className="secondary-button" disabled={cameraPending} onClick={() => void openCamera()}>{cameraPending ? '카메라 연결 중…' : '카메라 켜기'}</button></div>}
+              {(cameraReady || cameraPending) && <button className="camera-switch" disabled={cameraPending || cameraCapturing}
+                aria-label={(cameraFacing === 'user' ? '후면' : '전면') + ' 카메라로 전환'} onClick={() => void openCamera(cameraFacing === 'user' ? 'environment' : 'user')}>
+                {cameraPending ? <span className="spinner" /> : <SwitchCamera size={16} />}<span>{cameraFacing === 'user' ? '후면으로' : '전면으로'}</span>
+              </button>}
+              {cameraReady && <span className="camera-badge"><span />{cameraFacing === 'user' ? '전면 카메라' : '후면 카메라'}</span>}
             </div>
             <button className="capture-button" disabled={!cameraReady || cameraCapturing} onClick={takeSnapshot}>
               {cameraCapturing ? <span className="spinner" /> : <Camera size={14} />}{cameraCapturing ? '사진 준비 중…' : cameraTarget ? '다시 촬영하기' : '현재 화면 촬영하기'}

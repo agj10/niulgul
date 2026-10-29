@@ -63,15 +63,6 @@ export async function loadAsset(input: string | File, name?: string): Promise<As
   return fromCanvas(output, name ?? (input instanceof File ? input.name : '이미지'));
 }
 
-export function capture(video: HTMLVideoElement) {
-  if (!video.videoWidth) throw new Error('카메라가 준비될 때까지 잠시 기다려주세요.');
-  const out = canvas(640, 640 * video.videoHeight / video.videoWidth);
-  const ctx = out.getContext('2d')!;
-  ctx.translate(out.width, 0); ctx.scale(-1, 1);
-  ctx.drawImage(video, 0, 0, out.width, out.height);
-  return out;
-}
-
 const materialCache = new WeakMap<Asset, HTMLCanvasElement>();
 export function materialBase(source: Asset, scope: 'whole' | 'faces') {
   if (scope === 'faces' || source.canvas.width === source.canvas.height) return source.canvas;
