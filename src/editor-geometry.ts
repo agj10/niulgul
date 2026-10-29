@@ -1,17 +1,18 @@
 export type Point = { x: number; y: number };
 export type Rect = Point & { width: number; height: number };
 export type ImageTransform = Rect & { angle: number; flipX: boolean; flipY: boolean };
-export type ImageEdit = { image: ImageTransform; frame: Rect };
+export type ImageEdit = { image: ImageTransform; frame: Rect; crop: Rect };
 export type Edge = 'n' | 'e' | 's' | 'w';
 export type Corner = 'nw' | 'ne' | 'se' | 'sw';
 export type Gesture = 'move' | 'rotate' | `resize-${Corner | Edge}` | `crop-${Edge}`;
 
 const MIN = 12;
+const OUTPUT_FRAME: Rect = { x: 175, y: 85, width: 290, height: 290 };
 export function initialEdit(width: number, height: number): ImageEdit {
-  const scale = Math.min(440 / width, 290 / height);
+  const scale = OUTPUT_FRAME.width / Math.min(width, height);
   const w = width * scale, h = height * scale;
   return { image: { x: 320, y: 230, width: w, height: h, angle: 0, flipX: false, flipY: false },
-    frame: { x: 320 - w / 2, y: 230 - h / 2, width: w, height: h } };
+    frame: { ...OUTPUT_FRAME }, crop: { x: 0, y: 0, width: 1, height: 1 } };
 }
 export function rotate(point: Point, angle: number): Point {
   const radians = angle * Math.PI / 180, c = Math.cos(radians), s = Math.sin(radians);
@@ -32,17 +33,31 @@ export function dragEdit(initial: ImageEdit, gesture: Gesture, start: Point, poi
     return edit;
   }
   const edge = gesture.split('-')[1];
-  if (gesture.startsWith('crop-')) {
-    const f = edit.frame;
-    if (edge === 'w') { const amount = Math.min(dx, f.width - MIN); f.x += amount; f.width -= amount; }
-    if (edge === 'e') f.width = Math.max(MIN, f.width + dx);
-    if (edge === 'n') { const amount = Math.min(dy, f.height - MIN); f.y += amount; f.height -= amount; }
-    if (edge === 's') f.height = Math.max(MIN, f.height + dy);
-    return edit;
-  }
   const local = rotate({ x: dx, y: dy }, -image.angle);
   const sx = edge.includes('e') ? 1 : edge.includes('w') ? -1 : 0;
   const sy = edge.includes('s') ? 1 : edge.includes('n') ? -1 : 0;
+  if (gesture.startsWith('crop-')) {
+    // Crop in the rotated image's own axes. The normalized source rectangle
+    // lets a cropped edge reopen only as far as the original bitmap extends.
+    const crop = edit.crop;
+    const horizontal = sx !== 0, sign = horizontal ? sx : sy;
+    const length = horizontal ? image.width : image.height;
+    const span = horizontal ? crop.width : crop.height;
+    const offset = horizontal ? crop.x : crop.y;
+    const flipped = horizontal ? image.flipX : image.flipY;
+    const sourceStart = (sign < 0) !== flipped;
+    const fullLength = length / span;
+    const available = sourceStart ? offset : 1 - offset - span;
+    const next = Math.max(Math.min(MIN, length), Math.min(length + sign * (horizontal ? local.x : local.y), length + Math.max(0, available) * fullLength));
+    const change = next - length;
+    const nextSpan = next / fullLength;
+    const nextOffset = Math.max(0, Math.min(1 - nextSpan, offset - (sourceStart ? change / fullLength : 0)));
+    if (horizontal) { image.width = next; crop.x = nextOffset; crop.width = nextSpan; }
+    else { image.height = next; crop.y = nextOffset; crop.height = nextSpan; }
+    const center = rotate({ x: sx * change / 2, y: sy * change / 2 }, image.angle);
+    image.x += center.x; image.y += center.y;
+    return edit;
+  }
   let w = Math.max(MIN, image.width + sx * local.x), h = Math.max(MIN, image.height + sy * local.y);
   if (sx && sy && aspect && Number.isFinite(aspect) && aspect > 0) {
     h = Math.max(MIN, MIN / aspect, (w * aspect + h) / (aspect ** 2 + 1));
@@ -74,8 +89,8 @@ export function outputSize(frame: Rect, longest: number) {
   const scale = Math.max(1, Math.round(longest)) / Math.max(frame.width, frame.height);
   return { width: Math.max(1, Math.round(frame.width * scale)), height: Math.max(1, Math.round(frame.height * scale)) };
 }
-/** The white frame is the exported area; image transforms never change the source bitmap. */
-export function renderEdit(source: CanvasImageSource, edit: ImageEdit, longest: number): HTMLCanvasElement {
+/** The fixed square is exported; crop stays within the untouched source bitmap. */
+export function renderEdit(source: HTMLCanvasElement, edit: ImageEdit, longest: number): HTMLCanvasElement {
   const size = outputSize(edit.frame, longest), output = document.createElement('canvas');
   output.width = size.width; output.height = size.height;
   const ctx = output.getContext('2d');
@@ -86,6 +101,8 @@ export function renderEdit(source: CanvasImageSource, edit: ImageEdit, longest: 
   const image = edit.image;
   ctx.translate(image.x, image.y); ctx.rotate(image.angle * Math.PI / 180);
   ctx.scale(image.flipX ? -1 : 1, image.flipY ? -1 : 1);
-  ctx.drawImage(source, -image.width / 2, -image.height / 2, image.width, image.height);
+  const crop = edit.crop;
+  ctx.drawImage(source, crop.x * source.width, crop.y * source.height, crop.width * source.width, crop.height * source.height,
+    -image.width / 2, -image.height / 2, image.width, image.height);
   return output;
 }

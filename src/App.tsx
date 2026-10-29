@@ -7,6 +7,7 @@ import { ThemeControl } from './ThemeControl';
 import { SampleGallery, type Sample } from './SampleGallery';
 import { readHistory, saveImage, removeImage, type SavedImage, type ImageKind } from './history';
 import { loadOriginalCore, ORIGINAL_SETTINGS } from './original-core';
+import { loadWelcome, WelcomeOnce } from './welcome';
 import { Matcher } from './matcher';
 import { LatestJobs } from './jobs';
 import { drawFinal, drawAnimation, FluidRenderer } from './render';
@@ -16,7 +17,7 @@ import type { Asset, Settings, Result } from './types';
 type Mode = 'photo' | 'camera';
 type Scope = 'whole' | 'faces';
 type Phase = 'ready' | 'loading' | 'calculating' | 'animating' | 'done' | 'error';
-type Input = { source: Asset; target: Asset; settings: Settings; scope: Scope; animate: boolean; epoch: number };
+type Input = { source: Asset; target: Asset; settings: Settings; scope: Scope; epoch: number };
 const SAMPLES = [{ id: 'cat', name: '고양이' }, { id: 'colors', name: '컬러' }, { id: 'space', name: '우주' }, { id: 'tree', name: '나무' }];
 
 function download(blob: Blob, filename: string) {
@@ -57,27 +58,27 @@ export function App() {
   const output = useRef<HTMLCanvasElement>(null), video = useRef<HTMLVideoElement>(null);
   const stream = useRef<MediaStream | undefined>(undefined), matcher = useRef<Matcher | undefined>(undefined);
   const queue = useRef<LatestJobs<Input, Result> | undefined>(undefined), resultRef = useRef<Result | undefined>(undefined);
+  const welcome = useRef<WelcomeOnce | undefined>(undefined);
   const selectedTarget = mode === 'camera' ? cameraTarget : target;
   const input = useRef({ source, target: selectedTarget, settings, scope, mode });
   const active = useRef(true), mounted = useRef(true), epoch = useRef(0), captureRevision = useRef(0);
   const cameraRevision = useRef(0);
   const animation = useRef<{ cancel(): void } | undefined>(undefined), exporter = useRef<Worker | undefined>(undefined);
-  const uploadRevision = useRef({ source: 0, target: 0 }), imageRevision = useRef(''), needsAnimation = useRef(false);
+  const uploadRevision = useRef({ source: 0, target: 0 }), imageRevision = useRef('');
   input.current = { source, target: selectedTarget, settings, scope, mode };
   editorRef.current = editor;
 
   function fail(value: unknown) {
     setPhase('error'); setMessage(value instanceof Error ? value.message : '변환하지 못했어요. 다시 시도해 주세요.');
   }
-  function request(animate = false) {
+  function request() {
     const current = input.current;
     if (!current.source || !current.target) return;
-    needsAnimation.current ||= animate;
     animation.current?.cancel(); setShowOriginal(false);
     queue.current?.request({ source: current.source, target: current.target, settings: current.settings,
-      scope: current.scope, animate: needsAnimation.current, epoch: epoch.current });
+      scope: current.scope, epoch: epoch.current });
   }
-  function present(value: Result, animate: boolean): Promise<void> {
+  function present(value: Result): Promise<void> {
     const element = output.current!;
     const scale = 640 / Math.max(value.base.width, value.base.height);
     element.width = Math.round(value.base.width * scale); element.height = Math.round(value.base.height * scale);
@@ -86,7 +87,7 @@ export function App() {
       width: patch.rect.width * scale, height: patch.rect.height * scale,
     } }));
     const context = element.getContext('2d')!;
-    if (!animate || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
       drawFinal(context, value.base, element.width, element.height, patches); return Promise.resolve();
     }
     setPhase('animating'); setMessage('조각들이 제자리를 찾아가는 중');
@@ -112,16 +113,26 @@ export function App() {
     }));
   }
   useEffect(() => {
-    mounted.current = true; matcher.current = new Matcher();
+    mounted.current = true;
+    void loadOriginalCore(assetUrl('engine/original.wasm')).catch(() => {});
     queue.current = new LatestJobs<Input, Result>({
       async run(job) {
+        const prepared = welcome.current?.take(job.source.id, job.target.id, job.scope, job.settings);
+        const base = materialBase(job.source, job.scope);
+        if (prepared && base.width === prepared.side && base.height === prepared.side) return {
+          key: crypto.randomUUID(), sourceId: job.source.id, targetId: job.target.id, base, target: job.target.canvas,
+          patches: [{ rect: { x: 0, y: 0, width: base.width, height: base.height }, width: prepared.side, height: prepared.side,
+            source: prepared.source, target: new Uint8ClampedArray(0), assignment: prepared.assignment }],
+          duration: 0, settings: job.settings,
+        };
         setPhase('calculating'); setProgress(0); setMessage('사진 속 색으로 얼굴의 배치를 계산하고 있어요.');
         const face = job.target;
         const patches = makePatches(job.source, face, job.settings, job.scope, job.source.faces.map(item => item.id), resultRef.current);
         if (!patches.length) throw new Error(job.source.detection === 'unavailable'
           ? '얼굴 감지기를 불러오지 못했어요. 사진 전체로 시도해 주세요.'
           : '재료 사진에서 얼굴을 찾지 못했어요. 다른 사진을 고르거나 사진 전체로 시도해 주세요.');
-        const answer = await matcher.current!.solve(patches, job.settings, setProgress);
+        matcher.current ??= new Matcher();
+        const answer = await matcher.current.solve(patches, job.settings, setProgress);
         return {
           key: crypto.randomUUID(), sourceId: job.source.id, targetId: face.id, base: materialBase(job.source, job.scope), target: face.canvas,
           patches: patches.map((patch, i) => ({ ...patch, source: answer.sources[i], assignment: answer.assignments[i] })),
@@ -130,19 +141,25 @@ export function App() {
       },
       async publish(value, job) {
         if (job.epoch !== epoch.current) return;
-        resultRef.current = value; setResult(value); setShowOriginal(false); needsAnimation.current = false;
-        await present(value, job.animate);
+        resultRef.current = value; setResult(value); setShowOriginal(false);
+        await present(value);
         if (!mounted.current || job.epoch !== epoch.current) return;
         setPhase('done'); setProgress(1);
-        setMessage('완성했어요 · 계산 ' + (value.duration / 1000).toFixed(2) + '초');
+        setMessage(value.duration > 0 ? '완성했어요 · 계산 ' + (value.duration / 1000).toFixed(2) + '초' : '완성했어요');
       },
       error(value) { fail(value); },
       busy(value) { if (mounted.current) setBusy(value); },
       idle() {},
     });
     void readHistory().then(images => { if (mounted.current) setHistory(images); }).catch(() => {});
-    Promise.all([loadAsset(assetUrl('samples/cat.png'), '고양이'), loadAsset(assetUrl('samples/portrait.png'), '오바마')])
-      .then(([material, face]) => { if (!mounted.current) return; material.sampleId = 'cat'; face.sampleId = 'portrait'; face.builtinTarget = true; setSource(material); setTarget(face); })
+    Promise.all([loadAsset(assetUrl('samples/cat.png'), '고양이'), loadAsset(assetUrl('samples/portrait.png'), '오바마'),
+      loadWelcome(assetUrl('presets/welcome.bin')).catch(() => undefined)])
+      .then(([material, face, prepared]) => {
+        if (!mounted.current) return;
+        material.sampleId = 'cat'; face.sampleId = 'portrait'; face.builtinTarget = true;
+        if (prepared) welcome.current = new WelcomeOnce(material.id, face.id, prepared);
+        setSource(material); setTarget(face);
+      })
       .catch(value => mounted.current && fail(value));
     return () => {
       mounted.current = false; captureRevision.current++; cameraRevision.current++; animation.current?.cancel();
@@ -160,7 +177,7 @@ export function App() {
       }
       return;
     }
-    const timer = setTimeout(() => request(changedImage), changedImage ? 0 : 100);
+    const timer = setTimeout(() => request(), changedImage ? 0 : 100);
     return () => clearTimeout(timer);
   }, [source, selectedTarget, settings, scope, mode]);
   async function choose(value: File | string, kind: ImageKind, name?: string, choice?: { sampleId?: string; historyId?: string; framed?: boolean }) {
@@ -241,19 +258,14 @@ export function App() {
     } finally { if (isCurrent()) setCameraPending(false); }
   }
   async function takeSnapshot() {
-    if (!cameraReady || !video.current || !stream.current?.active || cameraCapturing) return;
+    if (!cameraReady || !video.current || !stream.current?.active || cameraCapturing || editorRef.current) return;
     const revision = ++captureRevision.current, capturedEpoch = epoch.current;
     setCameraCapturing(true); setCameraError('');
     try {
       const image = capture(video.current, cameraFacing);
-      const asset = await fromCanvas(image, '촬영한 얼굴', 'camera-' + crypto.randomUUID());
       if (!mounted.current || revision !== captureRevision.current || capturedEpoch !== epoch.current) return;
-      setCameraTarget(asset);
-      if (!active.current) { setPhase('ready'); setMessage('촬영한 얼굴을 넣었어요. 변환하기를 눌러 주세요.'); }
-      void saveImage(image, 'target', asset.name).then(saved => {
-        if (!mounted.current) return;
-        setHistory(saved.images);
-      }).catch(() => { if (mounted.current) setHistoryError('촬영한 사진의 기록을 저장하지 못했어요.'); });
+      editorRequests.current++; uploadRevision.current.target++; setTargetLoading(false);
+      setEditor({ canvas: image, name: '촬영한 얼굴', url: image.toDataURL('image/jpeg', 0.95), kind: 'target', camera: true, id: crypto.randomUUID() });
     } catch (value) {
       if (mounted.current && revision === captureRevision.current && capturedEpoch === epoch.current)
         setCameraError(value instanceof Error ? value.message : '촬영하지 못했어요. 다시 눌러 주세요.');
@@ -263,7 +275,7 @@ export function App() {
   }
   function changeMode(value: Mode) {
     if (value === mode) return;
-    active.current = false; epoch.current++; captureRevision.current++; cameraRevision.current++; needsAnimation.current = false;
+    active.current = false; epoch.current++; captureRevision.current++; cameraRevision.current++;
     queue.current?.invalidate(); animation.current?.cancel(); setMode(value); setCameraPending(false); setCameraCapturing(false);
     if (value === 'photo') { stopCamera(stream.current); stream.current = undefined; setCameraReady(false); }
     setCameraError('');
@@ -271,11 +283,8 @@ export function App() {
     setMessage(value === 'camera' ? (cameraTarget ? '촬영한 얼굴로 변환하거나 다시 촬영해 주세요.' : '카메라를 켜고 현재 화면을 촬영해 주세요.') : '사진을 골랐다면, 변환하기를 눌러 주세요.');
   }
   function start() {
-    const previous = resultRef.current;
-    const changedImage = !previous || previous.sourceId !== source?.id
-      || previous.targetId !== selectedTarget?.id;
     active.current = true;
-    request(changedImage);
+    request();
   }
   async function savePNG() {
     const value = resultRef.current; if (!value) return;

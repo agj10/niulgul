@@ -10,11 +10,15 @@ const origin = { x: 0, y: 0 };
 const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-7, `${a} != ${b}`);
 const nearPoint = (a, b) => { near(a.x, b.x); near(a.y, b.y); };
 
-test('editor retains the uploaded aspect ratio and exact native dimensions at full resolution', () => {
+test('editor retains the photo aspect ratio while every output frame has the same square dimensions', () => {
+  const reference = initialEdit(128,128).frame;
   for (const [w, h] of [[4032,3024],[3024,4032],[128,128],[4000,300],[24,32]]) {
     const edit = initialEdit(w, h);
     near(edit.image.width / edit.image.height, w / h);
-    assert.deepEqual(outputSize(edit.frame, Math.max(w,h)), {width:w,height:h});
+    assert.deepEqual(edit.frame,reference);
+    assert.deepEqual(edit.crop,{x:0,y:0,width:1,height:1});
+    assert.deepEqual(outputSize(edit.frame, Math.max(w,h)), {width:Math.max(w,h),height:Math.max(w,h)});
+    assert.ok(edit.image.width>=edit.frame.width && edit.image.height>=edit.frame.height);
   }
 });
 test('corners resize width and height independently by default, like Figma', () => {
@@ -57,20 +61,47 @@ test('moving or rotating a photo keeps the output frame fixed', () => {
   const rotated=dragEdit(edit,'rotate',{x:edit.image.x,y:edit.image.y-100},{x:edit.image.x+100,y:edit.image.y});
   near(rotated.image.angle,90);near(rotated.image.x,edit.image.x);near(rotated.image.y,edit.image.y);assert.deepEqual(rotated.frame,edit.frame);
 });
-test('all four crop bars adjust the exported region without altering the image', () => {
-  for(const edge of ['n','e','s','w']) {
-    const edit=initialEdit(400,200), delta={x:edge==='w'?30:edge==='e'?-30:0,y:edge==='n'?30:edge==='s'?-30:0};
-    const cropped=dragEdit(edit,'crop-'+edge,origin,delta);
-    assert.deepEqual(cropped.image,edit.image);
-    near(cropped.frame.width,edit.frame.width-Math.abs(delta.x));near(cropped.frame.height,edit.frame.height-Math.abs(delta.y));
-    assert.notDeepEqual(outputSize(cropped.frame,400),outputSize(edit.frame,400));
+test('crop bars follow rotated image edges, preserve the opposite edge and leave the output frame fixed', () => {
+  for(const angle of [0,35,90,170])for(const edge of ['n','e','s','w'])for(const flip of [false,true]) {
+    const edit=initialEdit(400,200);edit.image.angle=angle;edit.image.flipX=flip;edit.image.flipY=flip;
+    const x=edge==='e'?1:edge==='w'?-1:0,y=edge==='s'?1:edge==='n'?-1:0;
+    const cropped=dragEdit(edit,'crop-'+edge,origin,rotate({x:-x*30,y:-y*30},angle));
+    assert.deepEqual(cropped.frame,edit.frame);
+    near(cropped.image.width,edit.image.width-Math.abs(x*30));near(cropped.image.height,edit.image.height-Math.abs(y*30));
+    nearPoint(imagePoint(edit.image,-x*edit.image.width/2,-y*edit.image.height/2),imagePoint(cropped.image,-x*cropped.image.width/2,-y*cropped.image.height/2));
+    assert.deepEqual(outputSize(cropped.frame,400),{width:400,height:400});
+  }
+});
+test('crop expansion stops at the original pixels and can restore a previously cropped edge', () => {
+  for(const angle of [0,45,90])for(const edge of ['n','e','s','w'])for(const flip of [false,true]) {
+    const edit=initialEdit(400,200);edit.image.angle=angle;edit.image.flipX=flip;edit.image.flipY=flip;
+    const x=edge==='e'?1:edge==='w'?-1:0,y=edge==='s'?1:edge==='n'?-1:0;
+    const outside=rotate({x:x*10000,y:y*10000},angle);
+    const expanded=dragEdit(edit,'crop-'+edge,origin,outside);
+    near(expanded.image.width,edit.image.width);near(expanded.image.height,edit.image.height);
+    assert.deepEqual(expanded.crop,edit.crop);
+    const cropped=dragEdit(edit,'crop-'+edge,origin,rotate({x:-x*60,y:-y*60},angle));
+    const restored=dragEdit(cropped,'crop-'+edge,origin,outside);
+    near(restored.image.width,edit.image.width);near(restored.image.height,edit.image.height);
+    nearPoint(restored.image,edit.image);
+    for(const key of ['x','y','width','height'])near(restored.crop[key],edit.crop[key]);
+  }
+});
+test('cropping preserves the position of retained source pixels after rotation, flip and stretching', () => {
+  const position=(edit,u,v)=>imagePoint(edit.image,((u-edit.crop.x)/edit.crop.width-.5)*edit.image.width*(edit.image.flipX?-1:1),((v-edit.crop.y)/edit.crop.height-.5)*edit.image.height*(edit.image.flipY?-1:1));
+  for(const edge of ['n','e','s','w'])for(const flipX of [false,true])for(const flipY of [false,true]) {
+    const edit=initialEdit(400,200);edit.image.angle=38;edit.image.flipX=flipX;edit.image.flipY=flipY;edit.image.width*=1.3;
+    const x=edge==='e'?1:edge==='w'?-1:0,y=edge==='s'?1:edge==='n'?-1:0;
+    const cropped=dragEdit(edit,'crop-'+edge,origin,rotate({x:-x*35,y:-y*35},edit.image.angle));
+    nearPoint(position(edit,.5,.5),position(cropped,.5,.5));
   }
 });
 test('dragging across opposite edges cannot create zero, negative or non-finite sizes', () => {
   for(const gesture of ['crop-w','crop-n','crop-e','crop-s','resize-nw','resize-se','resize-w','resize-s']) {
     for(const amount of [-1e5,1e5]) {
       const changed=dragEdit(initialEdit(400,200),gesture,origin,{x:amount,y:amount},2);
-      for(const key of ['frame','image']){assert.ok(changed[key].width>0&&changed[key].height>0);assert.ok(Object.values(changed[key]).every(v=>typeof v!=='number'||Number.isFinite(v)));}
+      for(const key of ['frame','image','crop']){assert.ok(changed[key].width>0&&changed[key].height>0);assert.ok(Object.values(changed[key]).every(v=>typeof v!=='number'||Number.isFinite(v)));}
+      assert.ok(changed.crop.x>=0&&changed.crop.y>=0&&changed.crop.x+changed.crop.width<=1+1e-12&&changed.crop.y+changed.crop.height<=1+1e-12);
       const size=outputSize(changed.frame,32);assert.ok(size.width>=1&&size.height>=1);
     }
   }
@@ -88,10 +119,10 @@ test('applied pixels use the same crop, rotation, movement and flips as the prev
   const output={getContext:()=>ctx};
   const previous=globalThis.document;globalThis.document={createElement:()=>output};
   try {
-    const edit=initialEdit(400,200);edit.image.angle=90;edit.image.flipX=true;edit.image.flipY=true;edit.image.x+=15;
-    const bitmap={bitmap:true};assert.equal(renderEdit(bitmap,edit,200),output);
-    assert.equal(output.width,200);assert.equal(output.height,100);
-    assert.deepEqual(calls,[['fillRect',0,0,200,100],['scale',200/edit.frame.width,100/edit.frame.height],['translate',-edit.frame.x,-edit.frame.y],['translate',edit.image.x,edit.image.y],['rotate',Math.PI/2],['scale',-1,-1],['drawImage',bitmap,-edit.image.width/2,-edit.image.height/2,edit.image.width,edit.image.height]]);
+    const edit=dragEdit(initialEdit(400,200),'crop-w',origin,{x:40,y:0});edit.image.angle=90;edit.image.flipX=true;edit.image.flipY=true;edit.image.x+=15;
+    const bitmap={width:400,height:200};assert.equal(renderEdit(bitmap,edit,200),output);
+    assert.equal(output.width,200);assert.equal(output.height,200);
+    assert.deepEqual(calls,[['fillRect',0,0,200,200],['scale',200/edit.frame.width,200/edit.frame.height],['translate',-edit.frame.x,-edit.frame.y],['translate',edit.image.x,edit.image.y],['rotate',Math.PI/2],['scale',-1,-1],['drawImage',bitmap,edit.crop.x*400,edit.crop.y*200,edit.crop.width*400,edit.crop.height*200,-edit.image.width/2,-edit.image.height/2,edit.image.width,edit.image.height]]);
     assert.equal(ctx.fillStyle,'#fff');
   } finally {globalThis.document=previous;}
 });

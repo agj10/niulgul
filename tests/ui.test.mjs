@@ -35,6 +35,9 @@ test('editor exposes four independent corners, four stretch edges, crop bars, ro
   assert.match(html,/aria-label="사진 회전"/);assert.match(html,/aria-label="사진 이동"/);
   assert.equal((html.match(/type="range"/g)??[]).length,1);
   assert.match(html,/Shift: 원본 비율/);assert.match(html,/해상도가 높으면 얼굴화가 오래 걸려요/);
+  assert.match(html,/고정 출력 프레임/);assert.match(html,/출력 프레임 · 1:1/);
+  // Crop handles belong to the same transformed group as the image outline.
+  assert.ok(html.indexOf('aria-label="위 자르기"') < html.indexOf('class="editor-frame"'));
   assert.match(html,/max="4032"/);assert.match(html,/value="256"/);
   assert.match(html,/좌우 반전/);assert.match(html,/상하 반전/);
 });

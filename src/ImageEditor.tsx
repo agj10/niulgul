@@ -9,10 +9,10 @@ const edgeName = { n: '위', e: '오른쪽', s: '아래', w: '왼쪽' };
 const cornerName = { nw: '왼쪽 위', ne: '오른쪽 위', se: '오른쪽 아래', sw: '왼쪽 아래' };
 
 export function ImageEditor({ image, onClose, onApply }: { image: EditorImage; onClose(): void; onApply(canvas: HTMLCanvasElement): Promise<void> }) {
-  const [edit, setEdit] = useState(() => initialEdit(image.canvas.width, image.canvas.height));
+  const [initial] = useState(() => initialEdit(image.canvas.width, image.canvas.height));
+  const [edit, setEdit] = useState(initial);
   const maximum = Math.max(image.canvas.width, image.canvas.height), minimum = Math.min(32, maximum);
   const [resolution, setResolution] = useState(Math.min(256, maximum));
-  const [viewport, setViewport] = useState(() => editorBounds(edit));
   const [saving, setSaving] = useState(false), [error, setError] = useState('');
   const [stageSize, setStageSize] = useState({ width: 640, height: 460 });
   const [previewUrl, setPreviewUrl] = useState(image.url);
@@ -22,8 +22,9 @@ export function ImageEditor({ image, onClose, onApply }: { image: EditorImage; o
   close.current = onClose;
   const clipId = useId().replaceAll(':', ''), titleId = useId(), helpId = useId();
   const size = outputSize(edit.frame, resolution), frame = edit.frame, object = edit.image;
+  // Do not refit after a gesture: the output frame must stay still on screen.
+  const viewport = editorBounds(initial, stageSize.width, stageSize.width / stageSize.height);
   const unit = viewport.width / stageSize.width;
-  const fit = (value: ImageEdit) => editorBounds(value, stageSize.width, stageSize.width / stageSize.height);
   useEffect(() => {
     const observer = new ResizeObserver(entries => {
       const rect = entries[0].contentRect;
@@ -31,7 +32,7 @@ export function ImageEditor({ image, onClose, onApply }: { image: EditorImage; o
     });
     observer.observe(svg.current!); return () => observer.disconnect();
   }, []);
-  useEffect(() => { gesture.current = undefined; setViewport(fit(edit)); }, [stageSize.width, stageSize.height]);
+  useEffect(() => { gesture.current = undefined; }, [stageSize.width, stageSize.height]);
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null, overflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden'; root.current?.focus();
@@ -73,7 +74,6 @@ export function ImageEditor({ image, onClose, onApply }: { image: EditorImage; o
     if (gesture.current?.id !== event.pointerId) return;
     gesture.current = undefined;
     if (svg.current!.hasPointerCapture(event.pointerId)) svg.current!.releasePointerCapture(event.pointerId);
-    setViewport(fit(edit));
   }
   function keyboard(event: KeyboardEvent, type: Gesture) {
     if (saving || !['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) return;
@@ -83,7 +83,7 @@ export function ImageEditor({ image, onClose, onApply }: { image: EditorImage; o
       y: event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0 };
     const updated = type === 'rotate' ? { ...edit, image: { ...object, angle: object.angle + ((delta.x || -delta.y) > 0 ? 1 : -1) * (event.shiftKey ? 15 : 1) } }
       : dragEdit(edit, type, { x: 0, y: 0 }, delta, event.shiftKey ? image.canvas.width / image.canvas.height : undefined);
-    setEdit(updated); setViewport(fit(updated));
+    setEdit(updated);
   }
   const handle = (label: string, type: Gesture) => ({ role: 'button' as const, tabIndex: saving ? -1 : 0, 'aria-label': label,
     onPointerDown: (event: PointerEvent) => begin(event, type), onKeyDown: (event: KeyboardEvent) => keyboard(event, type) });
@@ -97,12 +97,14 @@ export function ImageEditor({ image, onClose, onApply }: { image: EditorImage; o
   return <div className="editor-backdrop"><div ref={root} className="image-editor" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={helpId} tabIndex={-1}>
     <header className="editor-header"><div><h2 id={titleId}>이미지 설정</h2><p>{image.kind === 'source' ? '재료 사진' : '얼굴 사진'} · {image.name}</p></div>
       <button className="icon-button" onClick={onClose} disabled={saving} aria-label="이미지 설정 닫기"><X size={20} /></button></header>
-    <div className="editor-scroll"><p id={helpId} className="editor-help">드래그로 이동 · 꼭짓점으로 크기 (Shift: 원본 비율) · 변으로 늘리기 · 중앙 바로 자르기 · 위쪽 손잡이로 회전</p>
+    <div className="editor-scroll"><p id={helpId} className="editor-help">고정된 1:1 프레임 안이 결과로 나와요. 드래그로 이동 · 꼭짓점으로 크기 (Shift: 원본 비율) · 변으로 늘리기 · 중앙 바로 자르기 · 위쪽 손잡이로 회전</p>
       <div className="editor-workbench"><svg ref={svg} className="editor-canvas" viewBox={`${viewport.x} ${viewport.y} ${viewport.width} ${viewport.height}`}
         aria-label="이미지 편집 영역" onPointerMove={move} onPointerUp={end} onPointerCancel={end} onLostPointerCapture={end}>
         <defs><clipPath id={clipId}><rect {...frame} /></clipPath></defs>
         <g opacity="0.2" pointerEvents="none" transform={`translate(${object.x} ${object.y}) rotate(${object.angle}) scale(${object.flipX ? -1 : 1} ${object.flipY ? -1 : 1})`}>
-          <image href={image.url} x={-object.width / 2} y={-object.height / 2} width={object.width} height={object.height} preserveAspectRatio="none" /></g>
+          <svg x={-object.width / 2} y={-object.height / 2} width={object.width} height={object.height} overflow="hidden" preserveAspectRatio="none"
+            viewBox={`${edit.crop.x * image.canvas.width} ${edit.crop.y * image.canvas.height} ${edit.crop.width * image.canvas.width} ${edit.crop.height * image.canvas.height}`}>
+            <image href={image.url} width={image.canvas.width} height={image.canvas.height} /></svg></g>
         <rect {...frame} fill="white" />
         <image className="editor-live-image" href={previewUrl} {...frame} preserveAspectRatio="none" clipPath={`url(#${clipId})`} />
         <g transform={`translate(${object.x} ${object.y}) rotate(${object.angle})`}>
@@ -124,20 +126,21 @@ export function ImageEditor({ image, onClose, onApply }: { image: EditorImage; o
             return <g key={corner} className={'editor-corner ' + corner} {...handle(cornerName[corner] + ' 크기 조절', `resize-${corner}`)}>
               <circle className="editor-hit" cx={x} cy={y} r={22 * unit} /><circle className="editor-knob" cx={x} cy={y} r={5 * unit} /></g>;
           })}
+          {edges.map(edge => {
+            const vertical = edge === 'e' || edge === 'w', x = edge === 'w' ? -object.width / 2 : edge === 'e' ? object.width / 2 : 0,
+              y = edge === 'n' ? -object.height / 2 : edge === 's' ? object.height / 2 : 0;
+            return <g key={edge} className={'editor-crop ' + (vertical ? 'horizontal' : 'vertical')} {...handle(edgeName[edge] + ' 자르기', `crop-${edge}`)}>
+              <rect className="editor-hit" x={x - 22 * unit} y={y - 22 * unit} width={44 * unit} height={44 * unit} />
+              <rect className="editor-crop-bar" x={x - (vertical ? 3 : 14) * unit} y={y - (vertical ? 14 : 3) * unit}
+                width={(vertical ? 6 : 28) * unit} height={(vertical ? 28 : 6) * unit} rx={2 * unit} /></g>;
+          })}
         </g>
-        <rect className="editor-frame" {...frame} />
-        {edges.map(edge => {
-          const vertical = edge === 'e' || edge === 'w', x = edge === 'w' ? frame.x : edge === 'e' ? frame.x + frame.width : frame.x + frame.width / 2,
-            y = edge === 'n' ? frame.y : edge === 's' ? frame.y + frame.height : frame.y + frame.height / 2;
-          return <g key={edge} className={'editor-crop ' + (vertical ? 'horizontal' : 'vertical')} {...handle(edgeName[edge] + ' 자르기', `crop-${edge}`)}>
-            <rect className="editor-hit" x={x - 22 * unit} y={y - 22 * unit} width={44 * unit} height={44 * unit} />
-            <rect className="editor-crop-bar" x={x - (vertical ? 3 : 14) * unit} y={y - (vertical ? 14 : 3) * unit}
-              width={(vertical ? 6 : 28) * unit} height={(vertical ? 28 : 6) * unit} rx={2 * unit} /></g>;
-        })}
+        <rect className="editor-frame" {...frame} aria-label="고정 출력 프레임" />
+        <text className="editor-frame-label" x={frame.x} y={frame.y - 10 * unit} fontSize={11 * unit}>출력 프레임 · 1:1</text>
       </svg></div>
       <div className="editor-tools"><div className="flip-tools"><button className="secondary-button" aria-pressed={object.flipX} disabled={saving} onClick={() => setEdit({ ...edit, image: { ...object, flipX: !object.flipX } })}><FlipHorizontal2 size={16} />좌우 반전</button>
         <button className="secondary-button" aria-pressed={object.flipY} disabled={saving} onClick={() => setEdit({ ...edit, image: { ...object, flipY: !object.flipY } })}><FlipVertical2 size={16} />상하 반전</button></div>
-        <button className="editor-reset" disabled={saving} onClick={() => { const value = initialEdit(image.canvas.width, image.canvas.height); setEdit(value); setViewport(fit(value)); setResolution(Math.min(256, maximum)); }}><RotateCcw size={14} />초기화</button></div>
+        <button className="editor-reset" disabled={saving} onClick={() => { setEdit(initial); setResolution(Math.min(256, maximum)); }}><RotateCcw size={14} />초기화</button></div>
       <div className="editor-bottom"><label className="resolution-control"><span>해상도<output>{size.width} × {size.height} px</output></span>
         <input type="range" aria-label="이미지 해상도" min={minimum} max={maximum} step="1" value={resolution} disabled={saving} onChange={event => setResolution(+event.target.value)} />
         <span className="resolution-ends"><small>{minimum}px</small><small>원본 {maximum}px</small></span></label>

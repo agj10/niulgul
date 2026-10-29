@@ -1,0 +1,28 @@
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+import { PNG } from 'pngjs';
+
+const root = new URL('../', import.meta.url);
+const read = file => readFileSync(new URL(file, root));
+const image = PNG.sync.read(read('public/samples/cat.png'));
+if (image.width !== image.height || image.data.some((value, i) => i % 4 === 3 && value !== 255)) throw new Error('The welcome material must be square and opaque');
+const side = image.width, count = side * side;
+const core = new WebAssembly.Instance(new WebAssembly.Module(read('public/engine/original.wasm')), { env: { progress() {} } }).exports;
+core.prepare(side, side, 1, 1);
+new Uint8Array(core.memory.buffer, core.input_source_pointer(), count * 4).set(image.data);
+// builtin=1 uses the original embedded Obama target and weights, as the app does.
+core.solve(side, 13, 100, 1, 0);
+const source = new Uint8Array(core.memory.buffer, core.source_pointer(), count * 4);
+const assignment = new Uint32Array(core.memory.buffer, core.assignment_pointer(), count);
+const bytes = Buffer.alloc(16 + count * 8);
+bytes.write('NIULGUL1'); bytes.writeUInt32LE(side, 8);
+bytes.set(source, 16);
+for (let i = 0; i < count; i++) bytes.writeUInt32LE(assignment[i], 16 + count * 4 + i * 4);
+const files = ['public/samples/cat.png', 'public/samples/portrait.png', 'public/engine/original.wasm', 'src/original-core.ts'];
+const hash = value => createHash('sha256').update(value).digest('hex');
+const inputs = Object.fromEntries(files.map(file => [file, hash(read(file))]));
+mkdirSync(new URL('public/presets/', root), { recursive: true });
+writeFileSync(new URL('public/presets/welcome.bin', root), bytes);
+writeFileSync(new URL('public/presets/welcome.json', root), JSON.stringify({ side, inputs, dataSha256: hash(bytes) }, null, 2) + '\n');
+console.log(`Precomputed ${side} × ${side} cat/Obama preset: ${fileURLToPath(new URL('public/presets/welcome.bin', root))}`);
