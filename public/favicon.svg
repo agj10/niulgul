@@ -1,1 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#28392d"/><path fill="#d9f286" d="M15 17h10v10H15zm24 0h10v10H39zM15 37h10v10H15zm10 10h14v8H25zm14-10h10v10H39z"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <style>:root{color:#293126}@media(prefers-color-scheme:dark){:root{color:#ecebe6}}</style>
+  <g transform="rotate(-7 16 16)">
+    <path d="M10.8 2.8h10.4a8 8 0 0 1 8 8v7.4a11 11 0 0 1-11 11h-4.4a11 11 0 0 1-11-11v-7.4a8 8 0 0 1 8-8Z" fill="none" stroke="currentColor" stroke-width="1.6"/>
+    <g fill="currentColor">
+      <rect x="10" y="11" width="3" height="3" rx="1"/>
+      <rect x="19" y="11" width="3" height="3" rx="1"/>
+      <path d="M12 19h9a3 3 0 0 1-3 3h-3a3 3 0 0 1-3-3Z"/>
+    </g>
+  </g>
+</svg>

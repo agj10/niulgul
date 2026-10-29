@@ -325,7 +325,7 @@ export function App() {
     selected={(kind === 'source' ? source : target)?.historyId ?? savedHistoryIds.current.get((kind === 'source' ? source : target)?.id ?? '') ?? (kind === 'source' ? source : target)?.sampleId}
     disabled={sourceLoading || targetLoading || !!editor} onSample={sample => chooseSample(sample, kind)} onHistory={image => void chooseHistory(image)} onRemove={id => void deleteHistory(id)} />;
   return <>
-    <header className="site-header"><a className="brand" href="./" aria-label="niulgul 처음으로"><span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>niulgul<span className="brand-period">.</span></a>
+    <header className="site-header"><a className="brand" href="./" aria-label="niulgul 처음으로"><span className="brand-mark" aria-hidden="true" />niulgul<span className="brand-period">.</span></a>
       <div className="header-actions"><ThemeControl /><a className="github-link" href="https://github.com/agj10/niulgul" target="_blank" rel="noreferrer" aria-label="GitHub 저장소"><Github size={17} /><span>GitHub</span><ArrowUpRight size={13} /></a></div></header>
     <main><div className="intro"><p>사진으로 노는 작은 작업실</p><h1>이 사진, <em>니 얼굴로.</em></h1><span>사진의 색은 그대로, 조각들의 자리를 바꿔 새로운 얼굴을 만들어요.</span></div><div className="workspace">
       <article className="output-panel" aria-label="변환 결과"><div className="stage-header"><div className="stage-title"><span className="status-dot" />사진의 색으로, 새로운 얼굴.</div>
