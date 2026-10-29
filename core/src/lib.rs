@@ -1,5 +1,4 @@
-//! Browser ABI around the upstream optimizer and unmodified fluid simulation.
-//! build.rs corrects only flattened-index truncation above 256px.
+//! Browser ABI around upstream matching and fluid forces, with rectangular grid bounds.
 use std::cell::RefCell;
 use image::{RgbImage, imageops};
 
@@ -16,12 +15,30 @@ pub mod app {
         pub struct Preset { pub inner: UnprocessedPreset, pub assignments: Vec<usize> }
     }
     pub mod morph_sim {
-        include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../vendor/obamify/src/app/morph_sim.rs"));
+        include!(concat!(env!("OUT_DIR"), "/morph_sim.rs"));
+        pub fn init_rect(width: u32, height: u32, assignments: &[usize]) -> (Vec<super::SeedPos>, Sim) {
+            let mut sim = Sim::new("niulgul".into());
+            let n = (width * height) as usize;
+            sim.cells = vec![CellBody::new(0.0, 0.0, 0.0, 0.0, 0.13); n];
+            let mut positions = Vec::with_capacity(n);
+            let step_x = 1024.0 / width as f32;
+            let step_y = 1024.0 / height as f32;
+            for i in 0..n {
+                positions.push(super::SeedPos { xy: [((i as u32 % width) as f32 + 0.5) * step_x,
+                    ((i as u32 / width) as f32 + 0.5) * step_y] });
+            }
+            for (dst, &src) in assignments.iter().enumerate() {
+                sim.cells[src] = CellBody::new(positions[src].xy[0], positions[src].xy[1],
+                    ((dst as u32 % width) as f32 + 0.5) * step_x,
+                    ((dst as u32 / width) as f32 + 0.5) * step_y, 0.13);
+            }
+            (positions, sim)
+        }
     }
     pub mod calculate {
         use super::preset::{Preset, UnprocessedPreset};
         pub struct GenerationSettings {
-            pub sidelen: u32, pub proximity_importance: i64,
+            pub sidelen: u32, pub height: u32, pub proximity_importance: i64,
             pub target: Vec<(u8,u8,u8)>, pub weights: Vec<i64>,
         }
         pub enum ProgressMsg {
@@ -50,7 +67,7 @@ struct State {
     sw: u32, sh: u32, tw: u32, th: u32,
     input_source: Vec<u8>, input_target: Vec<u8>,
     source: Vec<u8>, assignments: Vec<usize>, normalized: Vec<f32>,
-    sim: Option<(Vec<app::SeedPos>, app::morph_sim::Sim)>, frame: u32, side: u32,
+    sim: Option<(Vec<app::SeedPos>, app::morph_sim::Sim)>, frame: u32, side: u32, rows: u32,
 }
 thread_local! { static STATE: RefCell<State> = RefCell::new(State::default()); }
 
@@ -65,6 +82,15 @@ fn crop_scale(img: &RgbImage, side: u32) -> RgbImage {
 }
 fn rgb(w:u32,h:u32,data:&[u8]) -> RgbImage {
     RgbImage::from_vec(w,h,data.chunks_exact(4).flat_map(|p|[p[0],p[1],p[2]]).collect()).unwrap()
+}
+fn crop_aspect(img: &RgbImage, width: u32, height: u32) -> RgbImage {
+    if width == height { return crop_scale(img, width); }
+    let (w,h) = img.dimensions();
+    let (cw,ch) = if w as u64 * height as u64 > h as u64 * width as u64 {
+        (((h as u64 * width as u64 / height as u64) as u32).max(1), h)
+    } else { (w, ((w as u64 * height as u64 / width as u64) as u32).max(1)) };
+    let cropped = imageops::crop_imm(img, (w-cw)/2, (h-ch)/2, cw, ch).to_image();
+    if cw == width && ch == height { cropped } else { imageops::resize(&cropped,width,height,imageops::FilterType::Lanczos3) }
 }
 fn tone_image(img: &mut RgbImage, tone:u32) {
     // Optional input preparation. At 100 this is a strict no-op, so the
@@ -88,22 +114,33 @@ pub extern "C" fn prepare(sw:u32,sh:u32,tw:u32,th:u32) {
 
 #[no_mangle]
 pub extern "C" fn solve(side:u32,proximity:i32,tone:u32,builtin:u32,identity:u32) {
+    solve_grid(side,side,proximity,tone,builtin,identity,false);
+}
+#[no_mangle]
+pub extern "C" fn solve_rect(width:u32,height:u32,proximity:i32,tone:u32,builtin:u32,identity:u32) {
+    solve_grid(width,height,proximity,tone,builtin,identity,true);
+}
+fn solve_grid(side:u32,rows:u32,proximity:i32,tone:u32,builtin:u32,identity:u32,rectangular:bool) {
     STATE.with(|state| {
-        let mut s=state.borrow_mut(); s.side=side;
-        let original_source=crop_scale(&rgb(s.sw,s.sh,&s.input_source),side);
+        let mut s=state.borrow_mut(); s.side=side;s.rows=rows;
+        let source_image=rgb(s.sw,s.sh,&s.input_source);
+        let original_source=if rectangular {
+            if source_image.dimensions()==(side,rows) { source_image }
+            else { imageops::resize(&source_image,side,rows,imageops::FilterType::Lanczos3) }
+        }else{crop_scale(&source_image,side)};
         let mut target=if builtin!=0 {
-            crop_scale(&image::load_from_memory(include_bytes!("../../public/reference/target256.png")).unwrap().to_rgb8(),side)
-        }else{crop_scale(&rgb(s.tw,s.th,&s.input_target),side)};
+            crop_aspect(&image::load_from_memory(include_bytes!("../../public/reference/target256.png")).unwrap().to_rgb8(),side,rows)
+        }else{crop_aspect(&rgb(s.tw,s.th,&s.input_target),side,rows)};
         let weights=if builtin!=0 {
-            crop_scale(&image::load_from_memory(include_bytes!("../../public/reference/weights256.png")).unwrap().to_rgb8(),side)
+            crop_aspect(&image::load_from_memory(include_bytes!("../../public/reference/weights256.png")).unwrap().to_rgb8(),side,rows)
                 .pixels().map(|p|p[0] as i64).collect()
-        }else{vec![255; (side*side) as usize]};
+        }else{vec![255; (side*rows) as usize]};
         s.source=original_source.pixels().flat_map(|p|[p[0],p[1],p[2],255]).collect();
-        if identity!=0 { s.assignments=(0..(side*side) as usize).collect(); return; }
+        if identity!=0 { s.assignments=(0..(side*rows) as usize).collect(); return; }
         let mut source=original_source; tone_image(&mut source,tone);tone_image(&mut target,tone);
-        let settings=app::calculate::GenerationSettings{sidelen:side,proximity_importance:proximity as i64,
+        let settings=app::calculate::GenerationSettings{sidelen:side,height:rows,proximity_importance:proximity as i64,
             target:target.pixels().map(|p|(p[0],p[1],p[2])).collect(),weights};
-        let input=app::preset::UnprocessedPreset{name:"niulgul".into(),width:side,height:side,source_img:source.into_raw()};
+        let input=app::preset::UnprocessedPreset{name:"niulgul".into(),width:side,height:rows,source_img:source.into_raw()};
         let mut answer=None;
         let mut sink=|msg|match msg{
             app::calculate::ProgressMsg::Done(p)=>answer=Some(p.assignments),
@@ -116,14 +153,20 @@ pub extern "C" fn solve(side:u32,proximity:i32,tone:u32,builtin:u32,identity:u32
 }
 #[no_mangle]
 pub extern "C" fn sim_reserve(side:u32) {
-    STATE.with(|s|{let mut s=s.borrow_mut();s.side=side;s.assignments.resize((side*side)as usize,0);});
+    sim_reserve_rect(side,side);
+}
+#[no_mangle]
+pub extern "C" fn sim_reserve_rect(width:u32,height:u32) {
+    STATE.with(|s|{let mut s=s.borrow_mut();s.side=width;s.rows=height;s.assignments.resize((width*height)as usize,0);});
 }
 #[no_mangle]
 pub extern "C" fn sim_start() {
     STATE.with(|s|{
         let mut s=s.borrow_mut();let side=s.side;
-        let preset=app::preset::Preset{inner:app::preset::UnprocessedPreset{name:"niulgul".into(),width:side,height:side,source_img:vec![0;(side*side*3)as usize]},assignments:s.assignments.clone()};
-        let (_,positions,_,sim)=app::morph_sim::init_image(1024,preset);
+        let (positions,sim)=if side==s.rows {
+            let preset=app::preset::Preset{inner:app::preset::UnprocessedPreset{name:"niulgul".into(),width:side,height:side,source_img:vec![0;(side*side*3)as usize]},assignments:s.assignments.clone()};
+            let (_,positions,_,sim)=app::morph_sim::init_image(1024,preset); (positions,sim)
+        }else{app::morph_sim::init_rect(side,s.rows,&s.assignments)};
         s.normalized.resize(positions.len()*2,0.0);s.sim=Some((positions,sim));s.frame=0;
         update_normalized(&mut s);
     });
@@ -141,10 +184,10 @@ pub extern "C" fn sim_advance(frame:u32) {
 #[no_mangle] pub extern "C" fn positions_pointer() -> *mut f32 { STATE.with(|s|s.borrow_mut().normalized.as_mut_ptr()) }
 #[no_mangle]
 pub extern "C" fn sim_error() -> f32 {
-    STATE.with(|s|{let s=s.borrow();let positions=&s.sim.as_ref().unwrap().0;let step=1024.0/s.side as f32;
+    STATE.with(|s|{let s=s.borrow();let positions=&s.sim.as_ref().unwrap().0;let step=1024.0/s.side as f32;let step_y=1024.0/s.rows as f32;
         s.assignments.iter().enumerate().map(|(dst,&src)|{
             let x=(dst as u32%s.side)as f32+0.5;let y=(dst as u32/s.side)as f32+0.5;
-            let dx=positions[src].xy[0]-x*step;let dy=positions[src].xy[1]-y*step;(dx*dx+dy*dy).sqrt()
+            let dx=positions[src].xy[0]-x*step;let dy=positions[src].xy[1]-y*step_y;(dx*dx+dy*dy).sqrt()
         }).fold(0.0_f32,f32::max)
     })
 }

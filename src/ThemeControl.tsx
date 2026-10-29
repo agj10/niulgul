@@ -12,7 +12,7 @@ export function ThemeControl() {
       const dark = theme === 'dark' || (theme === 'system' && media.matches);
       document.documentElement.dataset.theme = theme;
       document.documentElement.dataset.appearance = dark ? 'dark' : 'light';
-      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#191d19' : '#f7f7f2');
+      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#181818' : '#f7f7f2');
     };
     apply(); media.addEventListener('change', apply);
     try { localStorage.setItem('niulgul-theme', theme); } catch { /* Session-only when storage is disabled. */ }

@@ -68,18 +68,7 @@ export async function loadAsset(input: string | File, name?: string): Promise<As
   return fromCanvas(image.canvas, image.name);
 }
 
-const materialCache = new WeakMap<Asset, HTMLCanvasElement>();
-export function materialBase(source: Asset, scope: 'whole' | 'faces') {
-  if (scope === 'faces' || source.canvas.width === source.canvas.height) return source.canvas;
-  let base = materialCache.get(source);
-  if (!base) {
-    const side = Math.min(source.canvas.width, source.canvas.height);
-    base = canvas(side, side);
-    base.getContext('2d')!.drawImage(source.canvas, Math.floor((source.canvas.width - side) / 2), Math.floor((source.canvas.height - side) / 2), side, side, 0, 0, side, side);
-    materialCache.set(source, base);
-  }
-  return base;
-}
+export function materialBase(source: Asset, _scope: 'whole' | 'faces') { return source.canvas; }
 
 export function makePatches(source: Asset, target: Asset, settings: Settings, scope: 'whole' | 'faces', selected: number[], _previous?: Result): PatchInput[] {
   const base = materialBase(source, scope);
@@ -96,11 +85,12 @@ export function makePatches(source: Asset, target: Asset, settings: Settings, sc
   const rawTarget = { width: face.width, height: face.height, data: face.getContext('2d')!.getImageData(0, 0, face.width, face.height).data };
   return rects.map(rect => {
     const tile = canvas(rect.width, rect.height);
-    const side = Math.max(1, Math.round(Math.min(tile.width, tile.height) / (settings.cellSize ?? 1)));
+    const width = Math.max(1, Math.round(tile.width / (settings.cellSize ?? 1)));
+    const height = Math.max(1, Math.round(tile.height / (settings.cellSize ?? 1)));
     tile.getContext('2d')!.drawImage(base, rect.x, rect.y, rect.width, rect.height, 0, 0, tile.width, tile.height);
     return {
-      rect, width: side, height: side,
-      source: new Uint8ClampedArray(side ** 2 * 4), target: new Uint8ClampedArray(side ** 2 * 4),
+      rect, width, height,
+      source: new Uint8ClampedArray(width * height * 4), target: new Uint8ClampedArray(width * height * 4),
       rawSource: { width: tile.width, height: tile.height, data: tile.getContext('2d')!.getImageData(0, 0, tile.width, tile.height).data },
       rawTarget, builtinTarget: target.builtinTarget,
     };

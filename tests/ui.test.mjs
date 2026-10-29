@@ -24,6 +24,7 @@ test('result is first in the workspace, followed by large source and face select
     assert.doesNotMatch(html,/type="range"|변환 강도|조각 크기|색감과 명암/);
     assert.match(html,/시스템 테마/);assert.match(html,/라이트 테마/);assert.match(html,/다크 테마/);
     assert.match(html,/고양이 샘플/);assert.match(html,/오바마 샘플/);assert.match(html,/얼굴 샘플/);
+    assert.match(html,/<h1>이 사진, <em>니 얼굴로\.<\/em><\/h1>/);
   } finally { globalThis.document = previous; }
 });
 test('editor exposes four independent corners, four stretch edges, crop bars, rotation and a single resolution slider', () => {
@@ -34,8 +35,9 @@ test('editor exposes four independent corners, four stretch edges, crop bars, ro
   assert.equal((html.match(/aria-label="[^"]*자르기"/g)??[]).length,4);
   assert.match(html,/aria-label="사진 회전"/);assert.match(html,/aria-label="사진 이동"/);
   assert.equal((html.match(/type="range"/g)??[]).length,1);
-  assert.match(html,/Shift: 원본 비율/);assert.match(html,/해상도가 높으면 얼굴화가 오래 걸려요/);
-  assert.match(html,/고정 출력 프레임/);assert.match(html,/출력 프레임 · 1:1/);
+  assert.doesNotMatch(html,/Shift:|드래그로 이동|위쪽 손잡이|editor-help|editor-frame-label|fill="white"|editor-live-image/);
+  assert.match(html,/해상도가 높으면 얼굴화가 오래 걸려요/);
+  assert.match(html,/고정 출력 프레임/);
   // Crop handles belong to the same transformed group as the image outline.
   assert.ok(html.indexOf('aria-label="위 자르기"') < html.indexOf('class="editor-frame"'));
   assert.match(html,/max="4032"/);assert.match(html,/value="256"/);
@@ -58,6 +60,6 @@ test('theme is applied before first paint and follows the system when storage is
   for(const [saved,system,expected] of [['light',true,'light'],['dark',false,'dark'],['system',true,'dark'],['invalid',false,'light'],[null,true,'dark'],['blocked',true,'dark']]) {
     const element={dataset:{}},meta={};
     runInNewContext(script,{localStorage:{getItem(){if(saved==='blocked')throw Error('disabled');return saved;}},matchMedia:()=>({matches:system}),document:{documentElement:element,querySelector:()=>meta}});
-    assert.equal(element.dataset.appearance,expected);assert.equal(meta.content,expected==='dark'?'#191d19':'#f7f7f2');
+    assert.equal(element.dataset.appearance,expected);assert.equal(meta.content,expected==='dark'?'#181818':'#f7f7f2');
   }
 });

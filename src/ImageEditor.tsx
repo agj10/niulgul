@@ -2,25 +2,24 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent, type PointerEve
 import { FlipHorizontal2, FlipVertical2, RotateCcw, X } from 'lucide-react';
 import { dragEdit, editorBounds, initialEdit, outputSize, renderEdit, type Corner, type Edge, type Gesture, type ImageEdit, type Point } from './editor-geometry';
 
-export type EditorImage = { canvas: HTMLCanvasElement; name: string; url: string; kind: 'source' | 'target'; camera?: boolean };
+export type EditorImage = { canvas: HTMLCanvasElement; name: string; url: string; kind: 'source' | 'target'; camera?: boolean; output?: { width: number; height: number } };
 const corners: Corner[] = ['nw', 'ne', 'se', 'sw'];
 const edges: Edge[] = ['n', 'e', 's', 'w'];
 const edgeName = { n: '위', e: '오른쪽', s: '아래', w: '왼쪽' };
 const cornerName = { nw: '왼쪽 위', ne: '오른쪽 위', se: '오른쪽 아래', sw: '왼쪽 아래' };
 
 export function ImageEditor({ image, onClose, onApply }: { image: EditorImage; onClose(): void; onApply(canvas: HTMLCanvasElement): Promise<void> }) {
-  const [initial] = useState(() => initialEdit(image.canvas.width, image.canvas.height));
+  const [initial] = useState(() => initialEdit(image.canvas.width, image.canvas.height, image.output?.width, image.output?.height));
   const [edit, setEdit] = useState(initial);
   const maximum = Math.max(image.canvas.width, image.canvas.height), minimum = Math.min(32, maximum);
   const [resolution, setResolution] = useState(Math.min(256, maximum));
   const [saving, setSaving] = useState(false), [error, setError] = useState('');
   const [stageSize, setStageSize] = useState({ width: 640, height: 460 });
-  const [previewUrl, setPreviewUrl] = useState(image.url);
   const root = useRef<HTMLDivElement>(null), svg = useRef<SVGSVGElement>(null), preview = useRef<HTMLCanvasElement>(null);
-  const gesture = useRef<{ edit: ImageEdit; type: Gesture; start: Point; id: number } | undefined>(undefined);
+  const gesture = useRef<{ edit: ImageEdit; type: Gesture; start: Point; aspect: number; id: number } | undefined>(undefined);
   const savingRef = useRef(false), close = useRef(onClose);
   close.current = onClose;
-  const clipId = useId().replaceAll(':', ''), titleId = useId(), helpId = useId();
+  const titleId = useId();
   const size = outputSize(edit.frame, resolution), frame = edit.frame, object = edit.image;
   // Do not refit after a gesture: the output frame must stay still on screen.
   const viewport = editorBounds(initial, stageSize.width, stageSize.width / stageSize.height);
@@ -54,7 +53,6 @@ export function ImageEditor({ image, onClose, onApply }: { image: EditorImage; o
     const rendered = renderEdit(image.canvas, edit, Math.min(resolution, 640));
     output.width = rendered.width; output.height = rendered.height;
     output.getContext('2d')!.drawImage(rendered, 0, 0);
-    setPreviewUrl(rendered.toDataURL('image/png'));
   }, [edit, resolution, image]);
   function point(event: PointerEvent): Point {
     const p = svg.current!.createSVGPoint(); p.x = event.clientX; p.y = event.clientY;
@@ -63,12 +61,12 @@ export function ImageEditor({ image, onClose, onApply }: { image: EditorImage; o
   function begin(event: PointerEvent, type: Gesture) {
     if (saving || gesture.current || (event.pointerType === 'mouse' && event.button !== 0)) return;
     event.preventDefault(); event.stopPropagation();
-    gesture.current = { edit, type, start: point(event), id: event.pointerId };
+    gesture.current = { edit, type, start: point(event), aspect: edit.image.width / edit.image.height, id: event.pointerId };
     svg.current!.setPointerCapture(event.pointerId);
   }
   function move(event: PointerEvent) {
     const current = gesture.current;
-    if (current?.id === event.pointerId) setEdit(dragEdit(current.edit, current.type, current.start, point(event), event.shiftKey ? image.canvas.width / image.canvas.height : undefined));
+    if (current?.id === event.pointerId) setEdit(dragEdit(current.edit, current.type, current.start, point(event), event.shiftKey ? current.aspect : undefined));
   }
   function end(event: PointerEvent) {
     if (gesture.current?.id !== event.pointerId) return;
@@ -82,7 +80,7 @@ export function ImageEditor({ image, onClose, onApply }: { image: EditorImage; o
     const delta = { x: event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0,
       y: event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0 };
     const updated = type === 'rotate' ? { ...edit, image: { ...object, angle: object.angle + ((delta.x || -delta.y) > 0 ? 1 : -1) * (event.shiftKey ? 15 : 1) } }
-      : dragEdit(edit, type, { x: 0, y: 0 }, delta, event.shiftKey ? image.canvas.width / image.canvas.height : undefined);
+      : dragEdit(edit, type, { x: 0, y: 0 }, delta, event.shiftKey ? object.width / object.height : undefined);
     setEdit(updated);
   }
   const handle = (label: string, type: Gesture) => ({ role: 'button' as const, tabIndex: saving ? -1 : 0, 'aria-label': label,
@@ -94,19 +92,16 @@ export function ImageEditor({ image, onClose, onApply }: { image: EditorImage; o
     catch (value) { setError(value instanceof Error ? value.message : '사진을 적용하지 못했어요.'); }
     finally { savingRef.current = false; setSaving(false); }
   }
-  return <div className="editor-backdrop"><div ref={root} className="image-editor" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={helpId} tabIndex={-1}>
+  return <div className="editor-backdrop"><div ref={root} className="image-editor" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
     <header className="editor-header"><div><h2 id={titleId}>이미지 설정</h2><p>{image.kind === 'source' ? '재료 사진' : '얼굴 사진'} · {image.name}</p></div>
       <button className="icon-button" onClick={onClose} disabled={saving} aria-label="이미지 설정 닫기"><X size={20} /></button></header>
-    <div className="editor-scroll"><p id={helpId} className="editor-help">고정된 1:1 프레임 안이 결과로 나와요. 드래그로 이동 · 꼭짓점으로 크기 (Shift: 원본 비율) · 변으로 늘리기 · 중앙 바로 자르기 · 위쪽 손잡이로 회전</p>
+    <div className="editor-scroll">
       <div className="editor-workbench"><svg ref={svg} className="editor-canvas" viewBox={`${viewport.x} ${viewport.y} ${viewport.width} ${viewport.height}`}
         aria-label="이미지 편집 영역" onPointerMove={move} onPointerUp={end} onPointerCancel={end} onLostPointerCapture={end}>
-        <defs><clipPath id={clipId}><rect {...frame} /></clipPath></defs>
-        <g opacity="0.2" pointerEvents="none" transform={`translate(${object.x} ${object.y}) rotate(${object.angle}) scale(${object.flipX ? -1 : 1} ${object.flipY ? -1 : 1})`}>
+        <g pointerEvents="none" transform={`translate(${object.x} ${object.y}) rotate(${object.angle}) scale(${object.flipX ? -1 : 1} ${object.flipY ? -1 : 1})`}>
           <svg x={-object.width / 2} y={-object.height / 2} width={object.width} height={object.height} overflow="hidden" preserveAspectRatio="none"
             viewBox={`${edit.crop.x * image.canvas.width} ${edit.crop.y * image.canvas.height} ${edit.crop.width * image.canvas.width} ${edit.crop.height * image.canvas.height}`}>
             <image href={image.url} width={image.canvas.width} height={image.canvas.height} /></svg></g>
-        <rect {...frame} fill="white" />
-        <image className="editor-live-image" href={previewUrl} {...frame} preserveAspectRatio="none" clipPath={`url(#${clipId})`} />
         <g transform={`translate(${object.x} ${object.y}) rotate(${object.angle})`}>
           <rect className="editor-object" x={-object.width / 2} y={-object.height / 2} width={object.width} height={object.height}
             {...handle('사진 이동', 'move')} />
@@ -136,7 +131,6 @@ export function ImageEditor({ image, onClose, onApply }: { image: EditorImage; o
           })}
         </g>
         <rect className="editor-frame" {...frame} aria-label="고정 출력 프레임" />
-        <text className="editor-frame-label" x={frame.x} y={frame.y - 10 * unit} fontSize={11 * unit}>출력 프레임 · 1:1</text>
       </svg></div>
       <div className="editor-tools"><div className="flip-tools"><button className="secondary-button" aria-pressed={object.flipX} disabled={saving} onClick={() => setEdit({ ...edit, image: { ...object, flipX: !object.flipX } })}><FlipHorizontal2 size={16} />좌우 반전</button>
         <button className="secondary-button" aria-pressed={object.flipY} disabled={saving} onClick={() => setEdit({ ...edit, image: { ...object, flipY: !object.flipY } })}><FlipVertical2 size={16} />상하 반전</button></div>

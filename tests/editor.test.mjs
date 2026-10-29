@@ -10,16 +10,17 @@ const origin = { x: 0, y: 0 };
 const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-7, `${a} != ${b}`);
 const nearPoint = (a, b) => { near(a.x, b.x); near(a.y, b.y); };
 
-test('editor retains the photo aspect ratio while every output frame has the same square dimensions', () => {
-  const reference = initialEdit(128,128).frame;
+test('output frame preserves material dimensions and aspect ratio instead of forcing a square', () => {
   for (const [w, h] of [[4032,3024],[3024,4032],[128,128],[4000,300],[24,32]]) {
     const edit = initialEdit(w, h);
     near(edit.image.width / edit.image.height, w / h);
-    assert.deepEqual(edit.frame,reference);
+    near(edit.frame.width / edit.frame.height, w / h);
     assert.deepEqual(edit.crop,{x:0,y:0,width:1,height:1});
-    assert.deepEqual(outputSize(edit.frame, Math.max(w,h)), {width:Math.max(w,h),height:Math.max(w,h)});
-    assert.ok(edit.image.width>=edit.frame.width && edit.image.height>=edit.frame.height);
+    assert.deepEqual(outputSize(edit.frame, Math.max(w,h)), {width:w,height:h});
   }
+  const face = initialEdit(400,400,640,360);
+  near(face.frame.width / face.frame.height,640/360);
+  assert.deepEqual(outputSize(face.frame,640),{width:640,height:360});
 });
 test('corners resize width and height independently by default, like Figma', () => {
   const edit = initialEdit(400,200), before = structuredClone(edit);
@@ -29,11 +30,12 @@ test('corners resize width and height independently by default, like Figma', () 
   assert.notEqual(resized.image.width/resized.image.height, 2);
   assert.deepEqual(edit,before);
 });
-test('Shift constrains a corner to the original bitmap ratio, even after stretching', () => {
-  const edit = initialEdit(400,200);
-  edit.image.width *= 1.4;
-  const changed = dragEdit(edit,'resize-se',origin,{x:40,y:50},2);
-  near(changed.image.width/changed.image.height,2);
+test('Shift keeps the cropped current ratio and does not restore the uncropped file ratio', () => {
+  const edit = dragEdit(initialEdit(400,200),'crop-e',origin,{x:-80,y:0});
+  const aspect = edit.image.width / edit.image.height;
+  assert.notEqual(aspect,2);
+  const changed = dragEdit(edit,'resize-se',origin,{x:40,y:50},aspect);
+  near(changed.image.width/changed.image.height,aspect);
   nearPoint(imagePoint(edit.image,-edit.image.width/2,-edit.image.height/2), imagePoint(changed.image,-changed.image.width/2,-changed.image.height/2));
 });
 test('all rotated resize corners preserve the opposite corner, with and without Shift', () => {
@@ -69,7 +71,7 @@ test('crop bars follow rotated image edges, preserve the opposite edge and leave
     assert.deepEqual(cropped.frame,edit.frame);
     near(cropped.image.width,edit.image.width-Math.abs(x*30));near(cropped.image.height,edit.image.height-Math.abs(y*30));
     nearPoint(imagePoint(edit.image,-x*edit.image.width/2,-y*edit.image.height/2),imagePoint(cropped.image,-x*cropped.image.width/2,-y*cropped.image.height/2));
-    assert.deepEqual(outputSize(cropped.frame,400),{width:400,height:400});
+    assert.deepEqual(outputSize(cropped.frame,400),{width:400,height:200});
   }
 });
 test('crop expansion stops at the original pixels and can restore a previously cropped edge', () => {
@@ -121,8 +123,8 @@ test('applied pixels use the same crop, rotation, movement and flips as the prev
   try {
     const edit=dragEdit(initialEdit(400,200),'crop-w',origin,{x:40,y:0});edit.image.angle=90;edit.image.flipX=true;edit.image.flipY=true;edit.image.x+=15;
     const bitmap={width:400,height:200};assert.equal(renderEdit(bitmap,edit,200),output);
-    assert.equal(output.width,200);assert.equal(output.height,200);
-    assert.deepEqual(calls,[['fillRect',0,0,200,200],['scale',200/edit.frame.width,200/edit.frame.height],['translate',-edit.frame.x,-edit.frame.y],['translate',edit.image.x,edit.image.y],['rotate',Math.PI/2],['scale',-1,-1],['drawImage',bitmap,edit.crop.x*400,edit.crop.y*200,edit.crop.width*400,edit.crop.height*200,-edit.image.width/2,-edit.image.height/2,edit.image.width,edit.image.height]]);
+    assert.equal(output.width,200);assert.equal(output.height,100);
+    assert.deepEqual(calls,[['fillRect',0,0,200,100],['scale',200/edit.frame.width,100/edit.frame.height],['translate',-edit.frame.x,-edit.frame.y],['translate',edit.image.x,edit.image.y],['rotate',Math.PI/2],['scale',-1,-1],['drawImage',bitmap,edit.crop.x*400,edit.crop.y*200,edit.crop.width*400,edit.crop.height*200,-edit.image.width/2,-edit.image.height/2,edit.image.width,edit.image.height]]);
     assert.equal(ctx.fillStyle,'#fff');
   } finally {globalThis.document=previous;}
 });

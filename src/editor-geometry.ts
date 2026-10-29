@@ -7,12 +7,13 @@ export type Corner = 'nw' | 'ne' | 'se' | 'sw';
 export type Gesture = 'move' | 'rotate' | `resize-${Corner | Edge}` | `crop-${Edge}`;
 
 const MIN = 12;
-const OUTPUT_FRAME: Rect = { x: 175, y: 85, width: 290, height: 290 };
-export function initialEdit(width: number, height: number): ImageEdit {
-  const scale = OUTPUT_FRAME.width / Math.min(width, height);
-  const w = width * scale, h = height * scale;
+export function initialEdit(width: number, height: number, outputWidth = width, outputHeight = height): ImageEdit {
+  const scale = Math.min(440 / outputWidth, 290 / outputHeight);
+  const fw = outputWidth * scale, fh = outputHeight * scale;
+  const imageScale = Math.max(fw / width, fh / height);
+  const w = width * imageScale, h = height * imageScale;
   return { image: { x: 320, y: 230, width: w, height: h, angle: 0, flipX: false, flipY: false },
-    frame: { ...OUTPUT_FRAME }, crop: { x: 0, y: 0, width: 1, height: 1 } };
+    frame: { x: 320 - fw / 2, y: 230 - fh / 2, width: fw, height: fh }, crop: { x: 0, y: 0, width: 1, height: 1 } };
 }
 export function rotate(point: Point, angle: number): Point {
   const radians = angle * Math.PI / 180, c = Math.cos(radians), s = Math.sin(radians);
@@ -89,7 +90,7 @@ export function outputSize(frame: Rect, longest: number) {
   const scale = Math.max(1, Math.round(longest)) / Math.max(frame.width, frame.height);
   return { width: Math.max(1, Math.round(frame.width * scale)), height: Math.max(1, Math.round(frame.height * scale)) };
 }
-/** The fixed square is exported; crop stays within the untouched source bitmap. */
+/** The material's fixed output frame is exported; crop stays within the source bitmap. */
 export function renderEdit(source: HTMLCanvasElement, edit: ImageEdit, longest: number): HTMLCanvasElement {
   const size = outputSize(edit.frame, longest), output = document.createElement('canvas');
   output.width = size.width; output.height = size.height;

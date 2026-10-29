@@ -10,10 +10,10 @@ export class Simulation {
   readonly destinations: Float32Array;
   readonly initial: Float32Array;
   constructor(public patch: Pick<PatchResult, 'width' | 'height' | 'assignment'>) {
-    if (patch.width !== patch.height) throw new Error('The original simulation uses a square grid.');
     this.rust = instantiateOriginalCore();
     const n = patch.width * patch.height;
-    this.rust.sim_reserve(patch.width);
+    if (patch.width === patch.height) this.rust.sim_reserve(patch.width);
+    else this.rust.sim_reserve_rect(patch.width, patch.height);
     new Uint32Array(this.rust.memory.buffer, this.rust.assignment_pointer(), n).set(patch.assignment);
     this.rust.sim_start();
     this.initial = this.positions.slice();

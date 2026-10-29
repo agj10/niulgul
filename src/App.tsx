@@ -188,7 +188,9 @@ export function App() {
       if (value instanceof File) {
         const image = await readImage(value, name);
         if (!mounted.current || revision !== uploadRevision.current[kind] || editingRevision !== editorRequests.current) return;
-        setEditor({ ...image, url: image.canvas.toDataURL('image/jpeg', 0.95), kind, id: crypto.randomUUID() });
+        const material = input.current.source;
+        setEditor({ ...image, url: image.canvas.toDataURL('image/jpeg', 0.95), kind, id: crypto.randomUUID(),
+          output: kind === 'target' && material ? { width: material.canvas.width, height: material.canvas.height } : undefined });
         return;
       }
       const asset = await loadAsset(value, name);
@@ -208,7 +210,12 @@ export function App() {
     finally { URL.revokeObjectURL(url); }
   }
   function editCurrent(asset: Asset | undefined, kind: ImageKind, camera = false) {
-    if (asset) { editorRequests.current++; setEditor({ canvas: asset.canvas, name: asset.name, url: asset.url, kind, camera, id: crypto.randomUUID() }); }
+    if (asset) {
+      editorRequests.current++;
+      const material = input.current.source;
+      setEditor({ canvas: asset.canvas, name: asset.name, url: asset.url, kind, camera, id: crypto.randomUUID(),
+        output: kind === 'target' && material ? { width: material.canvas.width, height: material.canvas.height } : undefined });
+    }
   }
   async function applyImage(draft: EditorImage, image: HTMLCanvasElement) {
     const asset = await fromCanvas(image, draft.name);
@@ -265,7 +272,9 @@ export function App() {
       const image = capture(video.current, cameraFacing);
       if (!mounted.current || revision !== captureRevision.current || capturedEpoch !== epoch.current) return;
       editorRequests.current++; uploadRevision.current.target++; setTargetLoading(false);
-      setEditor({ canvas: image, name: '촬영한 얼굴', url: image.toDataURL('image/jpeg', 0.95), kind: 'target', camera: true, id: crypto.randomUUID() });
+      const material = input.current.source;
+      setEditor({ canvas: image, name: '촬영한 얼굴', url: image.toDataURL('image/jpeg', 0.95), kind: 'target', camera: true, id: crypto.randomUUID(),
+        output: material ? { width: material.canvas.width, height: material.canvas.height } : undefined });
     } catch (value) {
       if (mounted.current && revision === captureRevision.current && capturedEpoch === epoch.current)
         setCameraError(value instanceof Error ? value.message : '촬영하지 못했어요. 다시 눌러 주세요.');
@@ -318,7 +327,7 @@ export function App() {
   return <>
     <header className="site-header"><a className="brand" href="./" aria-label="niulgul 처음으로"><span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>niulgul<span className="brand-period">.</span></a>
       <div className="header-actions"><ThemeControl /><a className="github-link" href="https://github.com/agj10/niulgul" target="_blank" rel="noreferrer" aria-label="GitHub 저장소"><Github size={17} /><span>GitHub</span><ArrowUpRight size={13} /></a></div></header>
-    <main><div className="workspace">
+    <main><div className="intro"><p>사진으로 노는 작은 작업실</p><h1>이 사진, <em>니 얼굴로.</em></h1><span>사진의 색은 그대로, 조각들의 자리를 바꿔 새로운 얼굴을 만들어요.</span></div><div className="workspace">
       <article className="output-panel" aria-label="변환 결과"><div className="stage-header"><div className="stage-title"><span className="status-dot" />사진의 색으로, 새로운 얼굴.</div>
         {result ? <button className={'compare-button ' + (showOriginal ? 'active' : '')} aria-pressed={showOriginal} disabled={busy} onClick={() => setShowOriginal(value => !value)}>{showOriginal ? '결과 보기' : '원본 보기'}<ChevronRight size={13} /></button> : <span className="stage-label">NIULGUL</span>}</div>
         <div className={'stage ' + (phase === 'calculating' ? 'is-calculating' : '')} aria-busy={busy}>

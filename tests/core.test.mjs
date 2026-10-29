@@ -41,6 +41,23 @@ test('upstream Rust optimizer uses each prepared pixel once', () => {
     assert.deepEqual([...assignment].sort((a,b)=>a-b), Array.from({length:256},(_,i)=>i));
   }
 });
+
+test('rectangular materials retain every native pixel in landscape and portrait grids', () => {
+  for(const [w,h] of [[24,12],[12,24],[17,9],[9,17]]) {
+    const e=runtime.instantiateOriginalCore();e.prepare(w,h,w,h);
+    const input=new Uint8Array(e.memory.buffer,e.input_source_pointer(),w*h*4);
+    const target=new Uint8Array(e.memory.buffer,e.input_target_pointer(),w*h*4);
+    for(let i=0;i<w*h;i++){input.set([i*73%256,i*23%256,i*47%256,255],i*4);target.set([255-i%256,i*31%256,i*17%256,255],i*4);}
+    const expected=input.slice();
+    e.solve_rect(w,h,13,100,0,0);
+    const assignment=new Uint32Array(e.memory.buffer,e.assignment_pointer(),w*h).slice();
+    assert.deepEqual([...assignment].sort((a,b)=>a-b),Array.from({length:w*h},(_,i)=>i));
+    assert.deepEqual(new Uint8Array(e.memory.buffer,e.source_pointer(),w*h*4),expected);
+    const sim=new Simulation({width:w,height:h,assignment});
+    for(const frame of [0,1,60,240])assert.ok([...sim.advance(frame)].every(Number.isFinite));
+    assert.equal(sim.positions.length,w*h*2);
+  }
+});
 test('source colors are preserved; optional tone preparation only changes matching', () => {
   const color=solve(), luma=solve(16,16,16,0);
   assert.deepEqual(color.source,luma.source);

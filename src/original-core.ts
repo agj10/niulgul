@@ -5,7 +5,9 @@ export type OriginalCore = {
   input_source_pointer(): number; input_target_pointer(): number;
   source_pointer(): number; assignment_pointer(): number;
   solve(side: number, proximity: number, tone: number, builtin: number, identity: number): void;
+  solve_rect(width: number, height: number, proximity: number, tone: number, builtin: number, identity: number): void;
   sim_reserve(side: number): void; sim_start(): void; sim_advance(frame: number): void;
+  sim_reserve_rect(width: number, height: number): void;
   positions_pointer(): number; sim_error(): number;
 };
 let module: WebAssembly.Module | undefined;

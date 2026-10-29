@@ -20,7 +20,8 @@ self.onmessage = async (event: MessageEvent<{ id: number; patches: PatchInput[];
       report = progress => self.postMessage({ type: 'progress', id, progress: (index + progress) / patches.length });
       // process_genetic and its FRand(12345) sequence are upstream Rust,
       // including on camera frames: no warm start or replacement optimizer.
-      rust.solve(patch.width, proximityForStrength(settings.strength), settings.tone, patch.builtinTarget ? 1 : 0, settings.strength === 0 ? 1 : 0);
+      if (patch.width === patch.height) rust.solve(patch.width, proximityForStrength(settings.strength), settings.tone, patch.builtinTarget ? 1 : 0, settings.strength === 0 ? 1 : 0);
+      else rust.solve_rect(patch.width, patch.height, proximityForStrength(settings.strength), settings.tone, patch.builtinTarget ? 1 : 0, settings.strength === 0 ? 1 : 0);
       assignments.push(new Uint32Array(rust.memory.buffer, rust.assignment_pointer(), patch.width * patch.height).slice());
       sources.push(new Uint8ClampedArray(rust.memory.buffer, rust.source_pointer(), patch.width * patch.height * 4).slice());
     }
