@@ -11,7 +11,7 @@ npm ci
 npm run dev
 ```
 
-빌드는 `npm run build`, 로컬 미리보기는 `npm start`로 실행해요.
+빌드는 `npm run build`, 로컬 미리보기는 `npm run start:local`로 실행해요.
 
 ## 사용
 

@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "start": "node scripts/start-preview.mjs",
+    "start": "node scripts/serve.mjs",
+    "start:local": "node scripts/start-preview.mjs",
     "dev": "vite --host 127.0.0.1",
     "build": "npm run build:engine && tsc -b && vite build",
     "build:engine": "node scripts/check-core.mjs",
