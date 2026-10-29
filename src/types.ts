@@ -8,6 +8,8 @@ export type Asset = {
   detection: 'ready' | 'unavailable';
   targetCrop?: { x: number; y: number; width: number; height: number };
   builtinTarget?: boolean;
+  sampleId?: string;
+  historyId?: string;
 };
 export type Settings = { strength: number; tone: number; cellSize: number };
 export type PatchInput = {

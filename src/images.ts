@@ -44,7 +44,7 @@ export async function fromCanvas(image: HTMLCanvasElement, name: string, id: str
   };
 }
 
-export async function loadAsset(input: string | File, name?: string): Promise<Asset> {
+export async function readImage(input: string | File, name?: string): Promise<{ canvas: HTMLCanvasElement; name: string }> {
   if (input instanceof File) {
     if (!input.type.startsWith('image/')) throw new Error('이미지 파일을 골라주세요.');
     if (input.size > 25 * 1024 * 1024) throw new Error('25MB 이하의 이미지를 골라주세요.');
@@ -60,7 +60,12 @@ export async function loadAsset(input: string | File, name?: string): Promise<As
   const ctx = output.getContext('2d')!;
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, output.width, output.height);
   ctx.drawImage(bitmap, 0, 0, output.width, output.height); bitmap.close();
-  return fromCanvas(output, name ?? (input instanceof File ? input.name : '이미지'));
+  return { canvas: output, name: name ?? (input instanceof File ? input.name : '이미지') };
+}
+
+export async function loadAsset(input: string | File, name?: string): Promise<Asset> {
+  const image = await readImage(input, name);
+  return fromCanvas(image.canvas, image.name);
 }
 
 const materialCache = new WeakMap<Asset, HTMLCanvasElement>();
