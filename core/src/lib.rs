@@ -1,4 +1,5 @@
-//! Browser ABI around the unmodified upstream optimizer and fluid simulation.
+//! Browser ABI around the upstream optimizer and unmodified fluid simulation.
+//! build.rs corrects only flattened-index truncation above 256px.
 use std::cell::RefCell;
 use image::{RgbImage, imageops};
 

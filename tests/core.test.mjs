@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import ts from 'typescript';
 
@@ -47,6 +48,17 @@ test('source colors are preserved; optional tone preparation only changes matchi
   for(let i=0;i<256;i++)assert.deepEqual([...color.source.slice(i*4,i*4+4)],[i*73%256,i*23%256,i*47%256,255]);
 });
 test('upstream FRand seeded solve is repeatable', () => assert.deepEqual(solve().assignment,solve().assignment));
+test('native-resolution coordinate compatibility retains original low-resolution assignments byte for byte', () => {
+  // Captured from the unmodified upstream WASM before the >256px index fix.
+  for (const [side, expected] of [
+    [16, 'a8e22382a71f3ad6e011fad8b08b1d242ff7350795be7b97e37073c893bff2b3'],
+    [32, '274e0d359a479584577e528277a15f8acad56a7dea4886c7fe6bc43ce8e6dac4'],
+    [64, 'eb4ea555195eb6c64ba133e6ac0f7baf9fe74595135623e14ddefdd8a3248a57'],
+  ]) {
+    assert.equal(createHash('sha256').update(solve(side,side,side).assignment).digest('hex'), expected);
+  }
+});
+
 test('zero strength bypass retains the source arrangement', () => assert.deepEqual([...solve(16,16,16,100,true).assignment],Array.from({length:256},(_,i)=>i)));
 test('upstream Rust fluid simulation runs real frames without a forced snap at 216', () => {
   const sim=new Simulation({width:16,height:16,assignment:Uint32Array.from({length:256},(_,i)=>255-i)});
