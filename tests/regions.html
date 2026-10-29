@@ -1,0 +1,30 @@
+<!doctype html><html><head><meta charset="utf-8"><title>niulgul region verification</title></head><body style="font:16px system-ui;padding:24px;background:#f7f7f2"><h1>Face region verification</h1><pre id="report">Preparing rectangular input…</pre><canvas id="result"></canvas><script type="module">
+import { fromCanvas, loadAsset, makePatches } from '/src/images.ts';
+import { Matcher } from '/src/matcher.ts';
+import { drawFinal } from '/src/render.ts';
+const report=document.getElementById('report');
+try{
+  const target=await loadAsset('/samples/portrait.png','target');
+  const material=document.createElement('canvas'); material.width=480; material.height=320;
+  const c=material.getContext('2d');
+  for(let y=0;y<320;y+=20)for(let x=0;x<480;x+=20){c.fillStyle=(x+y)%40?'#d9b76e':'#384d3c';c.fillRect(x,y,20,20);}
+  c.drawImage(target.canvas,135,30,210,260);
+  const source=await fromCanvas(material,'rectangular portrait');
+  const settings={strength:50,cellSize:1,tone:100};
+  const patches=makePatches(source,target,settings,'faces',source.faces.map(f=>f.id));
+  if(!patches.length)throw Error('Face was not detected');
+  report.textContent='Solving detected regions…';
+  const matcher=new Matcher();const solved=await matcher.solve(patches,settings,()=>{});matcher.dispose();
+  const result=document.getElementById('result');result.width=480;result.height=320;
+  drawFinal(result.getContext('2d'),material,480,320,patches.map((p,i)=>({...p,source:solved.sources[i],assignment:solved.assignments[i]})));
+  const before=c.getImageData(0,0,480,320).data,after=result.getContext('2d').getImageData(0,0,480,320).data;
+  let outsideChanged=0,insideChanged=0;
+  for(let y=0;y<320;y++)for(let x=0;x<480;x++){
+    // Include a 1px raster boundary in the selected region.
+    const inside=patches.some(p=>x>=Math.floor(p.rect.x)&&x<Math.ceil(p.rect.x+p.rect.width)&&y>=Math.floor(p.rect.y)&&y<Math.ceil(p.rect.y+p.rect.height));
+    const i=(y*480+x)*4,changed=before[i]!==after[i]||before[i+1]!==after[i+1]||before[i+2]!==after[i+2];
+    if(changed){if(inside)insideChanged++;else outsideChanged++;}
+  }
+  report.textContent=JSON.stringify({faces:source.faces.length,sourceWidth:480,sourceHeight:320,outsideChanged,insideChanged,passed:outsideChanged===0&&insideChanged>0},null,2);
+}catch(error){report.textContent='FAIL: '+error.message;}
+</script></body></html>

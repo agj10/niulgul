@@ -1,0 +1,18 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Material resolution verification</title></head><body><h1>Material resolution verification</h1><pre id="report">Loading test inputs…</pre><script type="module">
+import { fromCanvas,loadAsset,makePatches,materialBase } from '/src/images.ts';
+import { ORIGINAL_SETTINGS } from '/src/original-core.ts';
+const report=document.getElementById('report');
+try {
+  const photo=await loadAsset('/samples/cat.png','material');
+  const target=await loadAsset('/samples/portrait.png','face');
+  const create=async(size,asset)=>{const c=document.createElement('canvas');c.width=c.height=size;c.getContext('2d').drawImage(asset.canvas,0,0,size,size);return fromCanvas(c,'test');};
+  const small=await create(128,photo),big=await create(256,photo),smallFace=await create(64,target);
+  const a=makePatches(small,target,ORIGINAL_SETTINGS,'whole',[])[0];
+  const b=makePatches(big,target,ORIGINAL_SETTINGS,'whole',[])[0];
+  const c=makePatches(big,smallFace,ORIGINAL_SETTINGS,'whole',[])[0];
+  const coarse=makePatches(big,target,{...ORIGINAL_SETTINGS,cellSize:2},'whole',[])[0];
+  const result={material128:a.width,material256:b.width,material256WithFace64:c.width,material256At2px:coarse.width,outputWidth:materialBase(big,'whole').width};
+  result.passed=a.width===128&&b.width===256&&c.width===256&&coarse.width===128&&result.outputWidth===256;
+  report.textContent=JSON.stringify(result,null,2);
+}catch(e){report.textContent='FAIL: '+e.message;}
+</script></body></html>

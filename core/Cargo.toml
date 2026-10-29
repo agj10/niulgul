@@ -1,0 +1,19 @@
+[package]
+name = "niulgul-core"
+version = "0.2.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+image = { version = "=0.25.6", default-features = false, features = ["png"] }
+frand = { version = "=0.10.1", default-features = false }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+

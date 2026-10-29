@@ -1,0 +1,14 @@
+{
+  "implementation": "Spu7Nix/obamify process_genetic + morph_sim.rs",
+  "sources": {
+    "core/src/lib.rs": "4fbed98bee3b2e7e170ecea0f9675fe873f7fa243f7aab1ac5d3a16d36f8470a",
+    "core/build.rs": "d00ed844686e9dfc054ad404d47c76031b2afb66f3e21b710e8ed8026a4602cc",
+    "core/Cargo.toml": "9535a7be5043f5159056af9d7368b15b5ec3ee063b34d45c09a43338299ad13d",
+    "core/Cargo.lock": "370d6d16dc8c37bd11e10dab5594efd482b31e88c7b285bc8cc9ea90176012b6",
+    "vendor/obamify/src/app/calculate/mod.rs": "ffcb3f01704cb31da0adbf45d610eb0ba64739897390fa35f2082c868daeb6c5",
+    "vendor/obamify/src/app/morph_sim.rs": "f22d4b59170d698c441b2491296329420ec50824d93ee0126ffb23a5bafe2a47",
+    "public/reference/target256.png": "2149acc919bf094dbd3329b8f3d139e90be84b95c5e821f3d3a9cf4c58fa893a",
+    "public/reference/weights256.png": "8ce52d6538f5d5a7b71a2a21351cb80a2b1e084116ac2d42170a4f70a2db1f04"
+  },
+  "wasmSha256": "b45957f7ec237557a758e314cb1a82b318d47f941c4575320d284024182f94d9"
+}

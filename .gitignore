@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.local
+test-results/
+.DS_Store
+*.log
+*.tsbuildinfo
+public/vision/
+public/engine/matcher.wasm
+core/target/

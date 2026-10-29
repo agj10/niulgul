@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>niulgul camera test fixture</title></head>
+<body><div id="root"></div><script type="module">
+// Development-only fixture: exercises the real camera pipeline without
+// accessing the user's physical camera or capturing their face.
+const image = new Image(); image.src = '/samples/portrait.png'; await image.decode();
+const frame = document.createElement('canvas'); frame.width = 400; frame.height = 400;
+const context = frame.getContext('2d');
+let videoFrames = 0, solves = 0, targets = [];
+function draw() {
+  videoFrames++;
+  context.fillStyle = '#ededdf'; context.fillRect(0,0,400,400);
+  context.save(); context.translate(200,200); context.rotate(Math.sin(performance.now()/1800)*0.08);
+  context.drawImage(image,-200,-200,400,400); context.restore();
+  requestAnimationFrame(draw);
+}
+draw();
+Object.defineProperty(navigator.mediaDevices, 'getUserMedia', { configurable: true, value: async () => frame.captureStream(12) });
+function fingerprint(data) {
+  let hash = 2166136261;
+  for (const byte of data) hash = Math.imul(hash ^ byte, 16777619);
+  return (hash >>> 0).toString(16);
+}
+const NativeWorker = window.Worker;
+window.Worker = class extends NativeWorker {
+  postMessage(message, ...args) {
+    if (message.patches && message.settings) {
+      solves++;
+      targets.push(fingerprint(message.patches[0].rawTarget.data));
+    }
+    return super.postMessage(message, ...args);
+  }
+};
+await import('/src/main.tsx');
+const report = document.createElement('pre'); report.id = 'camera-test-report';
+report.style.cssText = 'position:fixed;bottom:4px;right:4px;padding:8px;background:#fff9;font:10px monospace;z-index:10';
+document.body.append(report);
+let animations = 0, completed = 0, snapshots = 0, last = '', lastSnapshot = '';
+function updateReport() {
+  const status = document.querySelector('.result-status')?.textContent ?? '';
+  if (status !== last) {
+    last = status;
+    if (status.includes('조각들이')) animations++;
+    if (status.includes('완성했어요')) completed++;
+  }
+  const snapshot = document.querySelector('.camera-snapshot img')?.src ?? '';
+  if (snapshot && snapshot !== lastSnapshot) { snapshots++; lastSnapshot = snapshot; }
+  report.textContent = JSON.stringify({ videoFrames, snapshots, solves, targets, animations, completed, status });
+}
+new MutationObserver(updateReport).observe(document.getElementById('root'), { subtree:true, childList:true, characterData:true });
+setInterval(updateReport, 250);
+</script></body></html>

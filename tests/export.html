@@ -1,0 +1,38 @@
+<!doctype html><html><head><meta charset="utf-8"><title>niulgul export verification</title></head>
+<body style="font:16px system-ui;padding:24px;background:#f7f7f2;color:#293126"><h1>GIF export verification</h1><pre id="status">Loading test images…</pre><img id="preview" style="max-width:512px;width:80vw"><script type="module">
+import { Matcher } from '/src/matcher.ts';
+const status = document.getElementById('status');
+try {
+  const images = await Promise.all(['colors','portrait'].map(async name => createImageBitmap(await (await fetch('/samples/'+name+'.png')).blob())));
+  const base = document.createElement('canvas'); base.width = 128; base.height = 128;
+  base.getContext('2d').drawImage(images[0],0,0,128,128);
+  const sample = image => {
+    const c = document.createElement('canvas'); c.width = 48; c.height = 48;
+    c.getContext('2d').drawImage(image,0,0,48,48);
+    return c.getContext('2d').getImageData(0,0,48,48).data;
+  };
+  const patch = {width:48,height:48,rect:{x:0,y:0,width:128,height:128},source:sample(images[0]),target:sample(images[1])};
+  status.textContent = 'Solving assignment…';
+  const matcher = new Matcher();
+  const answer = await matcher.solve([patch],{strength:50,cellSize:1,tone:100},()=>{});
+  matcher.dispose();
+  const worker = new Worker(new URL('/src/export.worker.ts',location.href),{type:'module'});
+  worker.onmessage = event => {
+    if(event.data.type==='progress') status.textContent = 'Rendering independent GIF: '+Math.round(event.data.progress*100)+'%';
+    if(event.data.type==='error') { status.textContent = 'FAIL: '+event.data.message; worker.terminate(); }
+    if(event.data.type==='done') {
+      const b=event.data.bytes;
+      const delays=[];
+      for(let i=0;i<b.length-7;i++) if(b[i]===33 && b[i+1]===249 && b[i+2]===4 && b[i+7]===0) delays.push(b[i+4]+256*b[i+5]);
+      const report={width:b[6]+256*b[7],height:b[8]+256*b[9],bytes:b.length,frames:delays.length,firstHoldMs:delays[0]*10,lastHoldMs:delays.at(-1)*10,durationMs:delays.reduce((a,c)=>a+c,0)*10};
+      status.textContent=JSON.stringify(report,null,2);
+      status.dataset.passed=String(report.width===128&&report.frames>=102&&report.frames<=142&&report.firstHoldMs===1000&&report.lastHoldMs===1000);
+      document.getElementById('preview').src=URL.createObjectURL(new Blob([b],{type:'image/gif'}));
+      worker.terminate();
+    }
+  };
+  worker.onerror = event => {status.textContent='FAIL: '+event.message;};
+  const bitmap=await createImageBitmap(base);
+  worker.postMessage({base:bitmap,patches:[{...patch,source:answer.sources[0],assignment:answer.assignments[0]}],width:128,height:128,engineUrl:'/engine/original.wasm'},[bitmap]);
+}catch(error){status.textContent='FAIL: '+error.message;}
+</script></body></html>
