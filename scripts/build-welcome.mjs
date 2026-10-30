@@ -2,9 +2,12 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
+import ts from 'typescript';
 
 const root = new URL('../', import.meta.url);
 const read = file => readFileSync(new URL(file, root));
+const runtimeText = ts.transpileModule(read('src/original-core.ts').toString('utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
+const { ORIGINAL_SETTINGS, proximityForStrength } = await import('data:text/javascript;base64,' + Buffer.from(runtimeText).toString('base64'));
 const image = PNG.sync.read(read('public/samples/cat.png'));
 if (image.width !== image.height || image.data.some((value, i) => i % 4 === 3 && value !== 255)) throw new Error('The welcome material must be square and opaque');
 const side = image.width, count = side * side;
@@ -12,7 +15,7 @@ const core = new WebAssembly.Instance(new WebAssembly.Module(read('public/engine
 core.prepare(side, side, 1, 1);
 new Uint8Array(core.memory.buffer, core.input_source_pointer(), count * 4).set(image.data);
 // builtin=1 uses the original embedded Obama target and weights, as the app does.
-core.solve(side, 13, 100, 1, 0);
+core.solve(side, proximityForStrength(ORIGINAL_SETTINGS.strength), ORIGINAL_SETTINGS.tone, 1, ORIGINAL_SETTINGS.strength === 0 ? 1 : 0);
 const source = new Uint8Array(core.memory.buffer, core.source_pointer(), count * 4);
 const assignment = new Uint32Array(core.memory.buffer, core.assignment_pointer(), count);
 const bytes = Buffer.alloc(16 + count * 8);

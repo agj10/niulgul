@@ -31,9 +31,16 @@ function solve(w = 16, h = 16, side = 16, tone = 100, identity = false) {
     source: new Uint8Array(e.memory.buffer, e.source_pointer(), side * side * 4).slice(),
   };
 }
-test('default settings select native material detail, RGB and original proximity 13', () => {
-  assert.deepEqual(runtime.ORIGINAL_SETTINGS, { strength: 50, tone: 100, cellSize: 1 });
-  assert.equal(runtime.proximityForStrength(50), 13);
+test('strength range caps at the previous 75 percent and defaults to the previous 25 percent', () => {
+  assert.deepEqual(runtime.ORIGINAL_SETTINGS, { strength: 100 / 3, tone: 100, cellSize: 1 });
+  assert.equal(runtime.proximityForStrength(runtime.ORIGINAL_SETTINGS.strength), 31);
+  assert.equal(runtime.proximityForStrength(200 / 3), 13);
+  assert.equal(runtime.proximityForStrength(100), 5);
+  assert.equal(runtime.proximityForStrength(150), 5);
+  assert.equal(runtime.proximityForStrength(-10), runtime.proximityForStrength(0));
+  for (let strength = 1; strength <= 100; strength++) {
+    assert.ok(runtime.proximityForStrength(strength) <= runtime.proximityForStrength(strength - 1));
+  }
 });
 test('upstream Rust optimizer uses each prepared pixel once', () => {
   for (const [w,h] of [[16,16],[24,12],[12,24]]) {
@@ -97,4 +104,32 @@ test('mode changes invalidate an old result without interrupting Rust', async ()
   let finish,idle,published=false;const done=new Promise(resolve=>{idle=resolve;});
   const q=new LatestJobs({run(){return new Promise(resolve=>{finish=resolve;});},publish(){published=true;},error:assert.fail,busy(){},idle});
   q.request('camera');q.invalidate();finish('old frame');await done;assert.equal(published,false);
+});
+
+test('a new request during animation invalidates the old completion and runs when animation is cancelled', async () => {
+  const ran = [], completed = [], busy = [];
+  let cancelAnimation, enteredAnimation, idle, oldIsCurrent;
+  const animating = new Promise(resolve => { enteredAnimation = resolve; });
+  const done = new Promise(resolve => { idle = resolve; });
+  const q = new LatestJobs({
+    async run(value) { ran.push(value); return value; },
+    async publish(value, _input, isCurrent) {
+      if (value === 'old') {
+        oldIsCurrent = isCurrent;
+        const animation = new Promise(resolve => { cancelAnimation = resolve; });
+        enteredAnimation();
+        await animation;
+      }
+      if (isCurrent()) completed.push(value);
+    },
+    error: assert.fail, busy(value) { busy.push(value); }, idle,
+  });
+  q.request('old'); await animating;
+  assert.equal(oldIsCurrent(), true);
+  q.request('new');
+  assert.equal(oldIsCurrent(), false);
+  cancelAnimation(); await done;
+  assert.deepEqual(ran, ['old', 'new']);
+  assert.deepEqual(completed, ['new']);
+  assert.deepEqual(busy, [true, false]);
 });

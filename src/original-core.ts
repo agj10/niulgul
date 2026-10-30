@@ -26,7 +26,9 @@ export function instantiateOriginalCore(progress: (value: number) => void = () =
   if (!module) throw new Error('원본 변환 엔진이 아직 준비되지 않았어요.');
   return new WebAssembly.Instance(module, { env: { progress } }).exports as unknown as OriginalCore;
 }
-export const ORIGINAL_SETTINGS = { strength: 50, tone: 100, cellSize: 1 };
+// The displayed 0–100 range covers the previous 0–75 range.
+export const ORIGINAL_SETTINGS = { strength: 100 / 3, tone: 100, cellSize: 1 };
 export function proximityForStrength(strength: number) {
-  return strength >= 100 ? 0 : Math.max(1, Math.round(13 * 2 ** ((50 - strength) / 20)));
+  const originalStrength = Math.max(0, Math.min(100, strength)) * 0.75;
+  return Math.max(1, Math.round(13 * 2 ** ((50 - originalStrength) / 20)));
 }

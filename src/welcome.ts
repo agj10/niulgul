@@ -1,4 +1,5 @@
 import type { Settings } from './types';
+import { ORIGINAL_SETTINGS } from './original-core';
 
 export type WelcomeData = { side: number; source: Uint8ClampedArray; assignment: Uint32Array };
 const MAGIC = 'NIULGUL1';
@@ -33,6 +34,7 @@ export class WelcomeOnce {
     if (!this.available) return;
     this.available = false;
     if (sourceId === this.sourceId && targetId === this.targetId && scope === 'whole'
-      && settings.strength === 50 && settings.tone === 100 && settings.cellSize === 1) return this.data;
+      && settings.strength === ORIGINAL_SETTINGS.strength && settings.tone === ORIGINAL_SETTINGS.tone
+      && settings.cellSize === ORIGINAL_SETTINGS.cellSize) return this.data;
   }
 }

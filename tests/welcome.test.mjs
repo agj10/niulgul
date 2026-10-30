@@ -6,12 +6,13 @@ import ts from 'typescript';
 
 const text = await readFile(new URL('../src/welcome.ts', import.meta.url), 'utf8');
 const { outputText } = ts.transpileModule(text, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } });
-const { decodeWelcome, WelcomeOnce } = await import('data:text/javascript;base64,' + Buffer.from(outputText).toString('base64'));
 const file = await readFile(new URL('../public/presets/welcome.bin', import.meta.url));
 const buffer = file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength);
 const runtimeText = ts.transpileModule(await readFile(new URL('../src/original-core.ts', import.meta.url), 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
-const runtime = await import('data:text/javascript;base64,' + Buffer.from(runtimeText).toString('base64'));
+const runtimeURL = 'data:text/javascript;base64,' + Buffer.from(runtimeText).toString('base64');
+const runtime = await import(runtimeURL);
 runtime.configureOriginalCore(await readFile(new URL('../public/engine/original.wasm', import.meta.url)));
+const { decodeWelcome, WelcomeOnce } = await import('data:text/javascript;base64,' + Buffer.from(outputText.replaceAll('./original-core', runtimeURL)).toString('base64'));
 const preset = decodeWelcome(buffer), settings = runtime.ORIGINAL_SETTINGS;
 
 test('precomputed welcome matches a real solve with the current default settings', () => {

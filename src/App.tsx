@@ -92,26 +92,34 @@ export function App() {
       drawFinal(context, value.base, element.width, element.height, patches); return Promise.resolve();
     }
     setPhase('animating'); setMessage('조각들이 제자리를 찾아가는 중');
-    return loadOriginalCore(assetUrl('engine/original.wasm')).then(() => new Promise<void>(resolve => {
-      let frameId = 0, finished = false, renderer: FluidRenderer;
-      try { renderer = new FluidRenderer(Math.max(1024, ...patches.map(p => p.width))); } catch { drawFinal(context, value.base, element.width, element.height, patches); resolve(); return; }
-      const simulations = patches.map(patch => new Simulation(patch)), start = performance.now();
-      const finish = () => {
+    return new Promise<void>((resolve, reject) => {
+      let frameId = 0, finished = false, renderer: FluidRenderer | undefined;
+      const finish = (error?: unknown) => {
         if (finished) return;
-        finished = true; cancelAnimationFrame(frameId); renderer.dispose();
+        finished = true; cancelAnimationFrame(frameId); renderer?.dispose();
         // Keep the actual last frame; do not force the particles onto a grid.
-        animation.current = undefined; resolve();
+        animation.current = undefined;
+        if (error !== undefined) reject(error); else resolve();
       };
-      animation.current = { cancel: finish };
-      const frame = () => {
+      // Register cancellation before the engine finishes loading, too.
+      animation.current = { cancel: () => finish() };
+      void loadOriginalCore(assetUrl('engine/original.wasm')).then(() => {
         if (finished) return;
-        const step = Math.min(SIMULATION_STEPS, Math.round((performance.now() - start) / 1000 * 60));
-        drawAnimation(context, value.base, element.width, element.height, patches, simulations, renderer, step);
-        if (step >= SIMULATION_STEPS || (step > 180 && simulations.every(sim => sim.settled))) { finish(); return; }
+        try { renderer = new FluidRenderer(Math.max(1024, ...patches.map(p => p.width))); }
+        catch { drawFinal(context, value.base, element.width, element.height, patches); finish(); return; }
+        const simulations = patches.map(patch => new Simulation(patch)), start = performance.now();
+        const frame = () => {
+          if (finished) return;
+          try {
+            const step = Math.min(SIMULATION_STEPS, Math.round((performance.now() - start) / 1000 * 60));
+            drawAnimation(context, value.base, element.width, element.height, patches, simulations, renderer!, step);
+            if (step >= SIMULATION_STEPS || (step > 180 && simulations.every(sim => sim.settled))) { finish(); return; }
+            frameId = requestAnimationFrame(frame);
+          } catch (error) { finish(error); }
+        };
         frameId = requestAnimationFrame(frame);
-      };
-      frameId = requestAnimationFrame(frame);
-    }));
+      }).catch(finish);
+    });
   }
   useEffect(() => {
     mounted.current = true;
@@ -140,11 +148,11 @@ export function App() {
           duration: answer.duration, settings: job.settings,
         };
       },
-      async publish(value, job) {
+      async publish(value, job, isCurrent) {
         if (job.epoch !== epoch.current) return;
         resultRef.current = value; setResult(value); setShowOriginal(false);
         await present(value);
-        if (!mounted.current || job.epoch !== epoch.current) return;
+        if (!mounted.current || job.epoch !== epoch.current || !isCurrent()) return;
         setPhase('done'); setProgress(1);
         setMessage(value.duration > 0 ? '완성했어요 · 계산 ' + (value.duration / 1000).toFixed(2) + '초' : '완성했어요');
       },
@@ -373,8 +381,8 @@ export function App() {
       </div>
       {historyError && <p className="input-error" role="status">{historyError}</p>}
       <section className="transform-settings" aria-label="변환 설정">
-        <label className="slider-control"><span>변환 강도<output>{settings.strength}<small>%</small></output></span>
-          <input aria-label="변환 강도" type="range" min={0} max={100} step={1} value={settings.strength} onChange={event => setSettings(value => ({ ...value, strength: +event.target.value }))} />
+        <label className="slider-control"><span>변환 강도<output>{Math.round(settings.strength)}<small>%</small></output></span>
+          <input aria-label="변환 강도" type="range" min={0} max={100} step="any" value={settings.strength} onChange={event => setSettings(value => ({ ...value, strength: +event.target.value }))} />
           <span className="slider-ends"><small>원본에 가깝게</small><small>얼굴에 가깝게</small></span></label>
         <label className="slider-control"><span>조각 크기<output>{settings.cellSize}<small> px</small></output></span>
           <input aria-label="조각 크기" type="range" min={1} max={32} step={1} value={settings.cellSize} onChange={event => setSettings(value => ({ ...value, cellSize: +event.target.value }))} />
@@ -389,7 +397,7 @@ export function App() {
           <button className={scope === 'faces' ? 'active' : ''} aria-pressed={scope === 'faces'} onClick={() => setScope('faces')}><ScanFace size={18} />얼굴 부분만<Check size={14} /></button></div>
         {scope === 'faces' && <p className="scope-hint">{source?.detection === 'unavailable' ? '얼굴 감지기를 불러오지 못했어요.' : source?.faces.length ? source.faces.length + '개의 얼굴을 찾았어요.' : '이 사진에서는 얼굴을 찾지 못했어요.'}</p>}
       </section>
-      <div className="start-action"><button className="primary-button" disabled={!canStart || busy || (scope === 'faces' && !source?.faces.length)} onClick={start}>{busy ? <><span className="spinner" />{phase === 'animating' ? '얼굴을 만드는 중' : '배치를 계산하는 중'}</> : <>{result ? '다시 변환하기' : '변환하기'}<ArrowUpRight size={20} /></>}</button>
+      <div className="start-action"><button className="primary-button" disabled={!canStart || (busy && phase !== 'animating') || (scope === 'faces' && !source?.faces.length)} onClick={start}>{busy && phase !== 'animating' ? <><span className="spinner" />배치를 계산하는 중</> : <>{result ? '다시 변환하기' : '변환하기'}<ArrowUpRight size={20} /></>}</button>
         <p className="local-note">사진은 브라우저 안에서만 처리해요.</p></div>
       </div>
     </div>

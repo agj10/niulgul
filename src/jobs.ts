@@ -7,7 +7,7 @@ export class LatestJobs<T, R> {
 
   constructor(private callbacks: {
     run(value: T): Promise<R>;
-    publish(result: R, input: T): Promise<void> | void;
+    publish(result: R, input: T, isCurrent: () => boolean): Promise<void> | void;
     error(error: unknown): void;
     busy(value: boolean): void;
     idle(): void;
@@ -29,7 +29,7 @@ export class LatestJobs<T, R> {
       try {
         const result = await this.callbacks.run(job.value);
         if (!this.disposed && job.revision === this.revision) {
-          await this.callbacks.publish(result, job.value);
+          await this.callbacks.publish(result, job.value, () => !this.disposed && job.revision === this.revision);
         }
       } catch (error) {
         if (!this.disposed && job.revision === this.revision) this.callbacks.error(error);
