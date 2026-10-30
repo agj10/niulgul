@@ -42,7 +42,8 @@ export function App() {
   const [source, setSource] = useState<Asset>(), [target, setTarget] = useState<Asset>();
   const [cameraTarget, setCameraTarget] = useState<Asset>();
   const [mode, setMode] = useState<Mode>('photo'), [scope, setScope] = useState<Scope>('whole');
-  const settings = ORIGINAL_SETTINGS;
+  const [settings, setSettings] = useState<Settings>({ ...ORIGINAL_SETTINGS });
+  const appliedSettings = useRef<Settings>({ ...ORIGINAL_SETTINGS });
   const [editor, setEditor] = useState<EditorImage & { id: string }>(), editorRef = useRef<EditorImage | undefined>(undefined);
   const editorRequests = useRef(0);
   const [history, setHistory] = useState<SavedImage[]>([]), [historyError, setHistoryError] = useState('');
@@ -60,22 +61,22 @@ export function App() {
   const queue = useRef<LatestJobs<Input, Result> | undefined>(undefined), resultRef = useRef<Result | undefined>(undefined);
   const welcome = useRef<WelcomeOnce | undefined>(undefined);
   const selectedTarget = mode === 'camera' ? cameraTarget : target;
-  const input = useRef({ source, target: selectedTarget, settings, scope, mode });
+  const input = useRef({ source, target: selectedTarget, settings: appliedSettings.current, scope, mode });
   const active = useRef(true), mounted = useRef(true), epoch = useRef(0), captureRevision = useRef(0);
   const cameraRevision = useRef(0);
   const animation = useRef<{ cancel(): void } | undefined>(undefined), exporter = useRef<Worker | undefined>(undefined);
   const uploadRevision = useRef({ source: 0, target: 0 }), imageRevision = useRef('');
-  input.current = { source, target: selectedTarget, settings, scope, mode };
+  input.current = { source, target: selectedTarget, settings: appliedSettings.current, scope, mode };
   editorRef.current = editor;
 
   function fail(value: unknown) {
     setPhase('error'); setMessage(value instanceof Error ? value.message : '변환하지 못했어요. 다시 시도해 주세요.');
   }
-  function request() {
+  function request(settings = input.current.settings) {
     const current = input.current;
     if (!current.source || !current.target) return;
     animation.current?.cancel(); setShowOriginal(false);
-    queue.current?.request({ source: current.source, target: current.target, settings: current.settings,
+    queue.current?.request({ source: current.source, target: current.target, settings,
       scope: current.scope, epoch: epoch.current });
   }
   function present(value: Result): Promise<void> {
@@ -179,7 +180,7 @@ export function App() {
     }
     const timer = setTimeout(() => request(), changedImage ? 0 : 100);
     return () => clearTimeout(timer);
-  }, [source, selectedTarget, settings, scope, mode]);
+  }, [source, selectedTarget, scope, mode]);
   async function choose(value: File | string, kind: ImageKind, name?: string, choice?: { sampleId?: string; historyId?: string; framed?: boolean }) {
     const revision = ++uploadRevision.current[kind], loading = kind === 'source' ? setSourceLoading : setTargetLoading;
     const editingRevision = ++editorRequests.current;
@@ -292,8 +293,9 @@ export function App() {
     setMessage(value === 'camera' ? (cameraTarget ? '촬영한 얼굴로 변환하거나 다시 촬영해 주세요.' : '카메라를 켜고 현재 화면을 촬영해 주세요.') : '사진을 골랐다면, 변환하기를 눌러 주세요.');
   }
   function start() {
+    appliedSettings.current = { ...settings };
     active.current = true;
-    request();
+    request(appliedSettings.current);
   }
   async function savePNG() {
     const value = resultRef.current; if (!value) return;
@@ -370,6 +372,18 @@ export function App() {
         </section>
       </div>
       {historyError && <p className="input-error" role="status">{historyError}</p>}
+      <section className="transform-settings" aria-label="변환 설정">
+        <label className="slider-control"><span>변환 강도<output>{settings.strength}<small>%</small></output></span>
+          <input aria-label="변환 강도" type="range" min={0} max={100} step={1} value={settings.strength} onChange={event => setSettings(value => ({ ...value, strength: +event.target.value }))} />
+          <span className="slider-ends"><small>원본에 가깝게</small><small>얼굴에 가깝게</small></span></label>
+        <label className="slider-control"><span>조각 크기<output>{settings.cellSize}<small> px</small></output></span>
+          <input aria-label="조각 크기" type="range" min={1} max={32} step={1} value={settings.cellSize} onChange={event => setSettings(value => ({ ...value, cellSize: +event.target.value }))} />
+          <span className="slider-ends"><small>잘게</small><small>큼직하게</small></span></label>
+        <label className="slider-control"><span>표현 방식<output>{settings.tone < 35 ? '명암' : settings.tone > 65 ? '색감' : '균형'}</output></span>
+          <input aria-label="색감과 명암" type="range" min={0} max={100} step={1} value={settings.tone} onChange={event => setSettings(value => ({ ...value, tone: +event.target.value }))} />
+          <span className="slider-ends"><small>명암 중심</small><small>색감 중심</small></span></label>
+        <p className="settings-note">설정은 변환하기를 누르면 적용돼요.</p>
+      </section>
       <div className="action-bar"><section className="scope-section"><h2>적용 영역</h2>
         <div className="scope-options" role="group" aria-label="적용 영역"><button className={scope === 'whole' ? 'active' : ''} aria-pressed={scope === 'whole'} onClick={() => setScope('whole')}><span className="scope-whole" />사진 전체<Check size={14} /></button>
           <button className={scope === 'faces' ? 'active' : ''} aria-pressed={scope === 'faces'} onClick={() => setScope('faces')}><ScanFace size={18} />얼굴 부분만<Check size={14} /></button></div>
