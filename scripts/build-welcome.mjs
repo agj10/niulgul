@@ -12,7 +12,7 @@ const core = new WebAssembly.Instance(new WebAssembly.Module(read('public/engine
 core.prepare(side, side, 1, 1);
 new Uint8Array(core.memory.buffer, core.input_source_pointer(), count * 4).set(image.data);
 // builtin=1 uses the original embedded Obama target and weights, as the app does.
-core.solve(side, 0, 100, 1, 0);
+core.solve(side, 13, 100, 1, 0);
 const source = new Uint8Array(core.memory.buffer, core.source_pointer(), count * 4);
 const assignment = new Uint32Array(core.memory.buffer, core.assignment_pointer(), count);
 const bytes = Buffer.alloc(16 + count * 8);

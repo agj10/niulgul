@@ -35,7 +35,7 @@ test('welcome is used only on the first request; manual reruns always recalculat
   assert.equal(once.take('cat', 'obama', 'whole', settings), undefined);
 });
 test('changed images, scope or settings cannot reuse the initial welcome result', () => {
-  for (const input of [['other', 'obama', 'whole', settings], ['cat', 'other', 'whole', settings], ['cat', 'obama', 'faces', settings], ['cat', 'obama', 'whole', { ...settings, tone: 0 }], ['cat', 'obama', 'whole', { ...settings, strength: 50 }]]) {
+  for (const input of [['other', 'obama', 'whole', settings], ['cat', 'other', 'whole', settings], ['cat', 'obama', 'faces', settings], ['cat', 'obama', 'whole', { ...settings, tone: 0 }], ['cat', 'obama', 'whole', { ...settings, strength: 100 }]]) {
     const once = new WelcomeOnce('cat', 'obama', preset);
     assert.equal(once.take(...input), undefined);
     assert.equal(once.take('cat', 'obama', 'whole', settings), undefined);
