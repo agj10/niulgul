@@ -31,8 +31,9 @@ function solve(w = 16, h = 16, side = 16, tone = 100, identity = false) {
     source: new Uint8Array(e.memory.buffer, e.source_pointer(), side * side * 4).slice(),
   };
 }
-test('default settings select native material detail, RGB and original proximity 13', () => {
-  assert.deepEqual(runtime.ORIGINAL_SETTINGS, { strength: 50, tone: 100, cellSize: 1 });
+test('default settings select full transformation, native material detail and original RGB matching', () => {
+  assert.deepEqual(runtime.ORIGINAL_SETTINGS, { strength: 100, tone: 100, cellSize: 1 });
+  assert.equal(runtime.proximityForStrength(runtime.ORIGINAL_SETTINGS.strength), 0);
   assert.equal(runtime.proximityForStrength(50), 13);
 });
 test('upstream Rust optimizer uses each prepared pixel once', () => {

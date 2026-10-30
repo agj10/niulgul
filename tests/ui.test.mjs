@@ -23,7 +23,7 @@ test('result precedes photo inputs and the three transform controls with origina
     assert.ok(html.indexOf('재료 사진 업로드') < html.indexOf('얼굴 사진 업로드'));
     assert.ok(html.indexOf('얼굴 사진 업로드') < html.indexOf('aria-label="변환 설정"'));
     assert.equal((html.match(/type="range"/g)??[]).length,3);
-    assert.match(html,/aria-label="변환 강도" type="range" min="0" max="100" step="1" value="50"/);
+    assert.match(html,/aria-label="변환 강도" type="range" min="0" max="100" step="1" value="100"/);
     assert.match(html,/aria-label="조각 크기" type="range" min="1" max="32" step="1" value="1"/);
     assert.match(html,/aria-label="색감과 명암" type="range" min="0" max="100" step="1" value="100"/);
     assert.match(html,/설정은 변환하기를 누르면 적용돼요/);
